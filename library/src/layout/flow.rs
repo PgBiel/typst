@@ -26,8 +26,10 @@ impl Layout for FlowElem {
         regions: Regions,
     ) -> SourceResult<Fragment> {
         let mut layouter = FlowLayouter::new(regions);
+        let children = self.children();
+        let children_len = children.len();
 
-        for mut child in &self.children() {
+        for (index, mut child) in children.iter().enumerate() {
             let outer = styles;
             let mut styles = styles;
             if let Some((elem, map)) = child.to_styled() {
@@ -38,7 +40,31 @@ impl Layout for FlowElem {
             if let Some(elem) = child.to::<VElem>() {
                 layouter.layout_spacing(elem, styles);
             } else if let Some(elem) = child.to::<ParElem>() {
-                layouter.layout_par(vt, elem, styles)?;
+                // Whether this paragraph is one among several (=> indentation rules apply)
+                let next_is_par = children_len - 1 > index  // check if next is also a Par
+                    && children.get(index.saturating_add(1))
+                    .map(|next_content| next_content.is::<ParElem>())
+                    .unwrap_or(false);
+
+                println!("NEXT IS PAR ({index}): {next_is_par}");
+                if layouter.last_was_par {
+                    println!("LAST WAS PAR ({index})");
+                }
+                let in_multi_par =
+                    layouter.last_was_par
+                    || children_len - 1 > index  // check if next is also a Par
+                        && children.get(index.saturating_add(1))
+                            .map(|next_content| next_content.is::<ParElem>())
+                            .unwrap_or(false);
+
+                if layouter.last_was_par {
+                    let last_was_par = children.get(index.saturating_sub(1))
+                        .map(|next_content| next_content.is::<ParElem>())
+                        .unwrap_or(false);
+                    eprintln!("WAS THE LAST ACTUALLY PAR? {last_was_par}");
+                }
+
+                layouter.layout_par(vt, elem, styles, in_multi_par)?;
             } else if child.is::<RectElem>()
                 || child.is::<SquareElem>()
                 || child.is::<EllipseElem>()
@@ -138,12 +164,13 @@ impl<'a> FlowLayouter<'a> {
         vt: &mut Vt,
         par: &ParElem,
         styles: StyleChain,
+        in_multi_par: bool,
     ) -> SourceResult<()> {
         let aligns = AlignElem::alignment_in(styles).resolve(styles);
         let leading = ParElem::leading_in(styles);
         let consecutive = self.last_was_par;
         let frames = par
-            .layout(vt, styles, consecutive, self.regions.base(), self.regions.expand.x)?
+            .layout(vt, styles, in_multi_par, consecutive, self.regions.base(), self.regions.expand.x)?
             .into_frames();
 
         let mut sticky = self.items.len();

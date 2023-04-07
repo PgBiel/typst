@@ -83,10 +83,20 @@ pub struct ParElem {
     #[default]
     pub linebreaks: Smart<Linebreaks>,
 
+    /// Whether the first paragraph in a chain of paragraphs (or within a block or page)
+    /// should be indented.
+    ///
+    /// By default, this is `false`, meaning only consecutive paragraphs are indented
+    /// (that is, only the second paragraph and those after it); however, you can set this option
+    /// to `true` to change that behavior and ensure all paragraphs, even the first, are indented.
+    #[default(false)]
+    pub first_par_indent: bool,
+
     /// The indent the first line of a paragraph should have.
     ///
-    /// Only the first line of a consecutive paragraph will be intended (not
-    /// the first one in a block or on the page).
+    /// Only the first line of a consecutive paragraph will be indented (not
+    /// the first one in a block or on the page), unless the `first_par_indent` option
+    /// is set to `true`.
     ///
     /// By typographic convention, paragraph breaks are indicated either by some
     /// space between paragraphs or by indented first lines. Consider reducing
@@ -130,6 +140,7 @@ impl ParElem {
         &self,
         vt: &mut Vt,
         styles: StyleChain,
+        in_multi_par: bool,
         consecutive: bool,
         region: Size,
         expand: bool,
@@ -142,6 +153,7 @@ impl ParElem {
             provider: TrackedMut<StabilityProvider>,
             introspector: Tracked<Introspector>,
             styles: StyleChain,
+            in_multi_par: bool,
             consecutive: bool,
             region: Size,
             expand: bool,
@@ -150,7 +162,7 @@ impl ParElem {
             let children = par.children();
 
             // Collect all text into one string for BiDi analysis.
-            let (text, segments, spans) = collect(&children, &styles, consecutive)?;
+            let (text, segments, spans) = collect(&children, &styles, in_multi_par, consecutive)?;
 
             // Perform BiDi analysis and then prepare paragraph layout by building a
             // representation on which we can do line breaking without layouting
@@ -171,6 +183,7 @@ impl ParElem {
             TrackedMut::reborrow_mut(&mut vt.provider),
             vt.introspector,
             styles,
+            in_multi_par,
             consecutive,
             region,
             expand,
@@ -491,6 +504,7 @@ impl<'a> Line<'a> {
 fn collect<'a>(
     children: &'a [Content],
     styles: &'a StyleChain<'a>,
+    in_multi_par: bool,
     consecutive: bool,
 ) -> SourceResult<(String, Vec<(Segment<'a>, StyleChain<'a>)>, SpanMapper)> {
     let mut full = String::new();
@@ -499,9 +513,11 @@ fn collect<'a>(
     let mut spans = SpanMapper::new();
     let mut iter = children.iter().peekable();
 
+    let first_par_indent = ParElem::first_par_indent_in(*styles);
     let first_line_indent = ParElem::first_line_indent_in(*styles);
     if !first_line_indent.is_zero()
-        && consecutive
+        && in_multi_par
+        && (first_par_indent || consecutive)
         && AlignElem::alignment_in(*styles).x.resolve(*styles)
             == TextElem::dir_in(*styles).start().into()
     {
