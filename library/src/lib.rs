@@ -79,6 +79,7 @@ fn global(math: Module, calc: Module) -> Module {
     global.define("rotate", layout::RotateElem::func());
     global.define("hide", layout::HideElem::func());
     global.define("measure", layout::measure);
+    global.define("overlay", layout::OverlayElem::func());
 
     // Visualize.
     global.define("image", visualize::ImageElem::func());
