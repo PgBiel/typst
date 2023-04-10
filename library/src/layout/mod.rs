@@ -9,9 +9,9 @@ mod flow;
 mod fragment;
 mod grid;
 mod hide;
+mod layering;
 mod list;
 mod measure;
-mod overlay;
 mod pad;
 mod page;
 mod par;
@@ -23,7 +23,6 @@ mod stack;
 mod table;
 mod terms;
 mod transform;
-mod underlay;
 
 pub use self::align::*;
 pub use self::columns::*;
@@ -33,9 +32,9 @@ pub use self::flow::*;
 pub use self::fragment::*;
 pub use self::grid::*;
 pub use self::hide::*;
+pub use self::layering::*;
 pub use self::list::*;
 pub use self::measure::*;
-pub use self::overlay::*;
 pub use self::pad::*;
 pub use self::page::*;
 pub use self::par::*;
@@ -47,7 +46,6 @@ pub use self::stack::*;
 pub use self::table::*;
 pub use self::terms::*;
 pub use self::transform::*;
-pub use self::underlay::*;
 
 use std::mem;
 
