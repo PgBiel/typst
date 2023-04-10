@@ -23,6 +23,7 @@ mod stack;
 mod table;
 mod terms;
 mod transform;
+mod underlay;
 
 pub use self::align::*;
 pub use self::columns::*;
@@ -46,6 +47,7 @@ pub use self::stack::*;
 pub use self::table::*;
 pub use self::terms::*;
 pub use self::transform::*;
+pub use self::underlay::*;
 
 use std::mem;
 
