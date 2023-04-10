@@ -88,7 +88,7 @@ pub struct TermsElem {
     /// ) [/ #product: Born in #year.]
     /// ```
     #[variadic]
-    pub children: Vec<TermItem>,
+    pub children: Vec<Content>,
 }
 
 impl Layout for TermsElem {
@@ -110,15 +110,33 @@ impl Layout for TermsElem {
 
         let mut seq = vec![];
         for (i, child) in self.children().into_iter().enumerate() {
+            let (elem, styles) = match child.to_styled() {
+                Some((elem, styles)) => (elem, Some(styles)),
+                None => (&child, None),
+            };
+
+            let Some(item) = elem.to::<TermItem>() else {
+                bail!(child.span(), "'terms' children must be instances of 'termitem'")
+            };
+
             if i > 0 {
                 seq.push(VElem::new(gutter).with_weakness(1).pack());
             }
             if !indent.is_zero() {
                 seq.push(HElem::new(indent.into()).pack());
             }
-            seq.push(child.term().strong());
+
+            let mut term = item.term();
+            let mut description = item.description();
+
+            if let Some(styles) = styles {
+                term = term.styled_with_map(styles.clone());
+                description = description.styled_with_map(styles.clone());
+            }
+
+            seq.push(term.strong());
             seq.push(separator.clone());
-            seq.push(child.description());
+            seq.push(description);
         }
 
         Content::sequence(seq)

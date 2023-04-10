@@ -557,40 +557,28 @@ impl<'a> ListBuilder<'a> {
     fn finish(self) -> (Content, StyleChain<'a>) {
         let (items, shared) = self.items.finish();
         let item = items.items().next().unwrap();
+
         let output = if item.is::<ListItem>() {
-            ListElem::new(
-                items
-                    .into_iter()
-                    .map(|(item, local)| item.styled_with_map(local))
-                    .collect::<Vec<_>>(),
-            )
-            .with_tight(self.tight)
-            .pack()
+            let children = items
+                .into_iter()
+                .map(|(item, local)| item.styled_with_map(local))
+                .collect::<Vec<_>>();
+
+            ListElem::new(children).with_tight(self.tight).pack()
         } else if item.is::<EnumItem>() {
-            EnumElem::new(
-                items
-                    .into_iter()
-                    .map(|(item, local)| item.styled_with_map(local))
-                    .collect::<Vec<_>>(),
-            )
-            .with_tight(self.tight)
-            .pack()
+            let children = items
+                .into_iter()
+                .map(|(item, local)| item.styled_with_map(local))
+                .collect::<Vec<_>>();
+
+            EnumElem::new(children).with_tight(self.tight).pack()
         } else if item.is::<TermItem>() {
-            TermsElem::new(
-                items
-                    .iter()
-                    .map(|(item, local)| {
-                        let item = item.to::<TermItem>().unwrap();
-                        item.clone()
-                            .with_term(item.term().styled_with_map(local.clone()))
-                            .with_description(
-                                item.description().styled_with_map(local.clone()),
-                            )
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .with_tight(self.tight)
-            .pack()
+            let children = items
+                .into_iter()
+                .map(|(item, local)| item.styled_with_map(local))
+                .collect::<Vec<_>>();
+
+            TermsElem::new(children).with_tight(self.tight).pack()
         } else {
             unreachable!()
         };
