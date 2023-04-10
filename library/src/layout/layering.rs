@@ -18,8 +18,8 @@ use super::*;
 #[element(Layout)]
 pub struct OverlayElem {
     /// The body, upon which children will be overlaid.
-    #[required]
-    pub body: Content,
+    #[positional]
+    pub body: Option<Content>,
 
     /// The children to overlay over the body.
     #[variadic]
@@ -35,7 +35,11 @@ impl Layout for OverlayElem {
     ) -> SourceResult<Fragment> {
         // Render the body freely first, to get its size.
         let pod = Regions::one(regions.base(), Axes::splat(false));
-        let mut frame = self.body().layout(vt, styles, pod)?.into_frame();
+        let mut frame = self
+            .body(styles)
+            .unwrap_or_default()
+            .layout(vt, styles, pod)?
+            .into_frame();
         let size = frame.size();
 
         // Now we restrict the children to that size, and
@@ -71,8 +75,8 @@ impl Layout for OverlayElem {
 #[element(Layout)]
 pub struct UnderlayElem {
     /// The body, under which children will be laid out.
-    #[required]
-    pub body: Content,
+    #[positional]
+    pub body: Option<Content>,
 
     /// The children to place under the body.
     #[variadic]
@@ -88,7 +92,11 @@ impl Layout for UnderlayElem {
     ) -> SourceResult<Fragment> {
         // Render the body freely first, to get its size.
         let pod = Regions::one(regions.base(), Axes::splat(false));
-        let mut frame = self.body().layout(vt, styles, pod)?.into_frame();
+        let mut frame = self
+            .body(styles)
+            .unwrap_or_default()
+            .layout(vt, styles, pod)?
+            .into_frame();
         let size = frame.size();
 
         // Now we restrict the children to that size, and
