@@ -4,6 +4,7 @@ use ecow::EcoString;
 
 use super::{Args, Str, Value, Vm};
 use crate::diag::{At, SourceResult};
+use crate::geom::PartialStroke;
 use crate::model::{Location, Selector};
 use crate::syntax::Span;
 
@@ -150,6 +151,12 @@ pub fn call(
             _ => return missing(),
         },
 
+        Value::Relative(length) => match method {
+            "relative" => Value::Ratio(length.rel),
+            "absolute" => Value::Length(length.abs),
+            _ => return missing(),
+        },
+
         Value::Dyn(dynamic) => {
             if let Some(location) = dynamic.downcast::<Location>() {
                 match method {
@@ -174,6 +181,12 @@ pub fn call(
                             args.named_or_find::<bool>("inclusive")?.unwrap_or(true);
                         selector.clone().after(location, inclusive).into()
                     }
+                    _ => return missing(),
+                }
+            } else if let Some(stroke) = dynamic.downcast::<PartialStroke>() {
+                match method {
+                    "thickness" => stroke.thickness.into(),
+                    "color" => stroke.paint.clone().into(),
                     _ => return missing(),
                 }
             } else {
@@ -329,6 +342,8 @@ pub fn methods_on(type_name: &str) -> &[(&'static str, bool)] {
         ],
         "function" => &[("where", true), ("with", true)],
         "arguments" => &[("named", false), ("pos", false)],
+        "relative length" => &[("relative", false), ("absolute", false)],
+        "stroke" => &[("thickness", false), ("color", false)],
         "location" => &[("page", false), ("position", false), ("page-numbering", false)],
         "selector" => &[("or", true), ("and", true), ("before", true), ("after", true)],
         "counter" => &[
