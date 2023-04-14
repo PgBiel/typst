@@ -1,4 +1,4 @@
-// Tests overlay and underlay
+// Tests overlay and underlay in markup mode
 
 ---
 #set page(width: 250pt, height: 150pt)
@@ -34,5 +34,5 @@
 ---
 #set page(width: 250pt, height: 12em)
 // Displays a yellow background under the given text
-And so, the young boy #underlay([announced that he], box(width: 100%, height: 100%, fill: yellow))
+And so, the young boy #box[underlay([announced that he], box(width: 100%, height: 100%, fill: yellow))]
 would leave.

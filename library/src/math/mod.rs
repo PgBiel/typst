@@ -9,9 +9,9 @@ mod cancel;
 mod delimited;
 mod frac;
 mod fragment;
+mod layering;
 mod matrix;
 mod op;
-mod overlay;
 mod root;
 mod row;
 mod spacing;
@@ -25,9 +25,9 @@ pub use self::attach::*;
 pub use self::cancel::*;
 pub use self::delimited::*;
 pub use self::frac::*;
+pub use self::layering::*;
 pub use self::matrix::*;
 pub use self::op::*;
-pub use self::overlay::*;
 pub use self::root::*;
 pub use self::style::*;
 pub use self::underover::*;
@@ -76,7 +76,8 @@ pub fn module() -> Module {
     math.define("underbracket", UnderbracketElem::func());
     math.define("overbracket", OverbracketElem::func());
     math.define("cancel", CancelElem::func());
-    math.define("overlay", MathOverlayElem::func());
+    math.define("overlay", OverlayElem::func());
+    math.define("underlay", UnderlayElem::func());
 
     // Fractions and matrix-likes.
     math.define("frac", FracElem::func());
