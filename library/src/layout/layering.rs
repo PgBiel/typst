@@ -33,9 +33,7 @@ impl Layout for OverlayElem {
         styles: StyleChain,
         regions: Regions,
     ) -> SourceResult<Fragment> {
-        let body = self
-            .body(styles)
-            .unwrap_or_default();
+        let body = self.body(styles).unwrap_or_default();
 
         let children = self.children();
 
@@ -76,9 +74,7 @@ impl Layout for UnderlayElem {
         styles: StyleChain,
         regions: Regions,
     ) -> SourceResult<Fragment> {
-        let body = self
-            .body(styles)
-            .unwrap_or_default();
+        let body = self.body(styles).unwrap_or_default();
 
         let children = self.children();
 
@@ -88,15 +84,16 @@ impl Layout for UnderlayElem {
 
 /// Layer in non-math mode.
 fn layer_in_text(
-    vt: &mut Vt, styles: StyleChain, regions: Regions,
-    body: Content, children: Vec<Content>,
-    is_overlay: bool
+    vt: &mut Vt,
+    styles: StyleChain,
+    regions: Regions,
+    body: Content,
+    children: Vec<Content>,
+    is_overlay: bool,
 ) -> SourceResult<Fragment> {
     // Render the body freely first, to get its size.
     let pod = Regions::one(regions.base(), Axes::splat(false));
-    let mut frame = body
-        .layout(vt, styles, pod)?
-        .into_frame();
+    let mut frame = body.layout(vt, styles, pod)?.into_frame();
     let size = frame.size();
 
     // Now we restrict the children to that size, and
