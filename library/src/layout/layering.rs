@@ -33,27 +33,13 @@ impl Layout for OverlayElem {
         styles: StyleChain,
         regions: Regions,
     ) -> SourceResult<Fragment> {
-        // Render the body freely first, to get its size.
-        let pod = Regions::one(regions.base(), Axes::splat(false));
-        let mut frame = self
+        let body = self
             .body(styles)
-            .unwrap_or_default()
-            .layout(vt, styles, pod)?
-            .into_frame();
-        let size = frame.size();
+            .unwrap_or_default();
 
-        // Now we restrict the children to that size, and
-        // layout each child on top of the body, in order.
-        let pod = Regions::one(size, Axes::splat(true));
-        for child in self.children() {
-            let child_frame = child.layout(vt, styles, pod)?.into_frame();
-            frame.push_frame(Point::zero(), child_frame);
-        }
+        let children = self.children();
 
-        // Finally, apply metadata.
-        frame.meta(styles, false);
-
-        Ok(Fragment::frame(frame))
+        layer_in_text(vt, styles, regions, body, children, /*is_overlay:*/ true)
     }
 }
 
@@ -90,26 +76,44 @@ impl Layout for UnderlayElem {
         styles: StyleChain,
         regions: Regions,
     ) -> SourceResult<Fragment> {
-        // Render the body freely first, to get its size.
-        let pod = Regions::one(regions.base(), Axes::splat(false));
-        let mut frame = self
+        let body = self
             .body(styles)
-            .unwrap_or_default()
-            .layout(vt, styles, pod)?
-            .into_frame();
-        let size = frame.size();
+            .unwrap_or_default();
 
-        // Now we restrict the children to that size, and
-        // layout each child below the body, in order.
-        let pod = Regions::one(size, Axes::splat(true));
-        for child in self.children() {
-            let child_frame = child.layout(vt, styles, pod)?.into_frame();
-            frame.prepend_frame(Point::zero(), child_frame);
-        }
+        let children = self.children();
 
-        // Finally, apply metadata.
-        frame.meta(styles, false);
-
-        Ok(Fragment::frame(frame))
+        layer_in_text(vt, styles, regions, body, children, /*is_overlay:*/ false)
     }
+}
+
+/// Layer in non-math mode.
+fn layer_in_text(
+    vt: &mut Vt, styles: StyleChain, regions: Regions,
+    body: Content, children: Vec<Content>,
+    is_overlay: bool
+) -> SourceResult<Fragment> {
+    // Render the body freely first, to get its size.
+    let pod = Regions::one(regions.base(), Axes::splat(false));
+    let mut frame = body
+        .layout(vt, styles, pod)?
+        .into_frame();
+    let size = frame.size();
+
+    // Now we restrict the children to that size, and
+    // layout each child above or below the body, in order.
+    let pod = Regions::one(size, Axes::splat(true));
+    for child in children {
+        let layer = child.layout(vt, styles, pod)?.into_frame();
+
+        if is_overlay {
+            frame.push_frame(Point::zero(), layer);
+        } else {
+            frame.prepend_frame(Point::zero(), layer);
+        }
+    }
+
+    // Finally, apply metadata.
+    frame.meta(styles, false);
+
+    Ok(Fragment::frame(frame))
 }
