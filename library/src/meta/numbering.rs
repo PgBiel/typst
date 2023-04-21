@@ -140,8 +140,7 @@ cast_to_value! {
 /// - `(I)`
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct NumberingPattern {
-    pieces: EcoVec<(EcoString, NumberingKind, Case)>,
-    suffix: EcoString,
+    pieces: EcoVec<(EcoString, NumberingKind, Case, EcoString)>,
     trimmed: bool,
 }
 
@@ -150,21 +149,25 @@ impl NumberingPattern {
     pub fn apply(&self, numbers: &[usize]) -> EcoString {
         let mut fmt = EcoString::new();
         let mut numbers = numbers.iter();
+        let mut last_suffix = None;
 
-        for (i, ((prefix, kind, case), &n)) in
+        for (i, ((prefix, kind, case, suffix), &n)) in
             self.pieces.iter().zip(&mut numbers).enumerate()
         {
+            last_suffix = Some(suffix);
             if i > 0 || !self.trimmed {
                 fmt.push_str(prefix);
             }
             fmt.push_str(&kind.apply(n, *case));
         }
 
-        for ((prefix, kind, case), &n) in
+        for ((prefix, kind, case, _), &n) in
             self.pieces.last().into_iter().cycle().zip(numbers)
         {
             if prefix.is_empty() {
-                fmt.push_str(&self.suffix);
+                if let Some(suffix) = last_suffix {
+                    fmt.push_str(suffix);
+                }
             } else {
                 fmt.push_str(prefix);
             }
@@ -172,7 +175,9 @@ impl NumberingPattern {
         }
 
         if !self.trimmed {
-            fmt.push_str(&self.suffix);
+            if let Some(suffix) = last_suffix {
+                fmt.push_str(suffix);
+            }
         }
 
         fmt
@@ -181,18 +186,18 @@ impl NumberingPattern {
     /// Apply only the k-th segment of the pattern to a number.
     pub fn apply_kth(&self, k: usize, number: usize) -> EcoString {
         let mut fmt = EcoString::new();
-        if let Some((prefix, _, _)) = self.pieces.first() {
+        if let Some((prefix, _, _, _)) = self.pieces.first() {
             fmt.push_str(prefix);
         }
-        if let Some((_, kind, case)) = self
+        if let Some((_, kind, case, suffix)) = self
             .pieces
             .iter()
             .chain(self.pieces.last().into_iter().cycle())
             .nth(k)
         {
             fmt.push_str(&kind.apply(number, *case));
+            fmt.push_str(suffix);
         }
-        fmt.push_str(&self.suffix);
         fmt
     }
 
@@ -208,25 +213,36 @@ impl FromStr for NumberingPattern {
     fn from_str(pattern: &str) -> Result<Self, Self::Err> {
         let mut pieces = EcoVec::new();
         let mut handled = 0;
+        let mut last_piece = None;
 
         for (i, c) in pattern.char_indices() {
             let Some(kind) = NumberingKind::from_char(c.to_ascii_lowercase()) else {
                 continue;
             };
 
+            // Change the suffix for the latest piece to be everything
+            // between the latest piece and this one.
+            if let Some((prefix, kind, case)) = last_piece {
+                pieces.push((prefix, kind, case, pattern[handled..i].into()));
+            }
+
             let prefix = pattern[handled..i].into();
             let case =
                 if c.is_uppercase() || c == '壹' { Case::Upper } else { Case::Lower };
-            pieces.push((prefix, kind, case));
+            last_piece = Some((prefix, kind, case));
             handled = c.len_utf8() + i;
         }
 
-        let suffix = pattern[handled..].into();
+        // Set the suffix for the last piece to be everything after it.
+        if let Some((prefix, kind, case)) = last_piece {
+            pieces.push((prefix, kind, case, pattern[handled..].into()));
+        }
+
         if pieces.is_empty() {
             Err("invalid numbering pattern")?;
         }
 
-        Ok(Self { pieces, suffix, trimmed: false })
+        Ok(Self { pieces, trimmed: false })
     }
 }
 
@@ -238,15 +254,19 @@ cast_from_value! {
 cast_to_value! {
     v: NumberingPattern => {
         let mut pat = EcoString::new();
-        for (prefix, kind, case) in &v.pieces {
+        let mut last_suffix = None;
+        for (prefix, kind, case, suffix) in &v.pieces {
             pat.push_str(prefix);
             let mut c = kind.to_char();
             if *case == Case::Upper {
                 c = c.to_ascii_uppercase();
             }
             pat.push(c);
+            last_suffix = Some(suffix);
         }
-        pat.push_str(&v.suffix);
+        if let Some(suffix) = last_suffix {
+            pat.push_str(suffix);
+        }
         pat.into()
     }
 }
