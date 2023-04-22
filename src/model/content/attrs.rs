@@ -110,7 +110,11 @@ impl ContentAttrs {
     fn push_attrs(&mut self, attrs: impl IntoIterator<Item = Attr>) {
         // Use 'push_attr' to ensure 'style', 'span' and 'location'
         // are properly handled
-        attrs.into_iter().for_each(|attr| self.push_attr(attr));
+        for attr in attrs {
+            if !matches!(attr, Attr::Header(_)) {
+                self.push_attr(attr);
+            }
+        }
     }
 
     /// Ensures an attribute has priority by placing it at
@@ -119,6 +123,7 @@ impl ContentAttrs {
         if attr.is_variadic() {
             self.init_header();
             self.attrs.insert(1, attr);
+            self.header_mut().unwrap().update_indices_after(1, 1);
         } else {
             self.push_attr(attr);
         }
@@ -174,6 +179,7 @@ impl ContentAttrs {
             Attr::Field(field) => *field == name,
             _ => false,
         }) {
+            self.init_header();
             self.attrs.make_mut()[i + 1] = Attr::Value(Prehashed::new(value.into()));
         } else {
             self.push_attr(Attr::Field(name));
@@ -222,7 +228,11 @@ impl ContentAttrs {
 
     /// Whether there are no attributes besides the header.
     pub(super) fn is_empty(&self) -> bool {
-        return !self.attrs.iter().any(|attr| matches!(attr, Attr::Header(_)));
+        return !self.attrs.iter().any(|attr| !matches!(attr, Attr::Header(_)));
+    }
+
+    pub(super) fn is_childless(&self) -> bool {
+        return !self.attrs.iter().any(|attr| matches!(attr, Attr::Child(_)));
     }
 
     pub(super) fn is_styled(&self) -> bool {
@@ -295,7 +305,7 @@ impl ContentAttrs {
 
     /// Joins this Content's variadic attributes with another's.
     pub(super) fn extend(&mut self, other: impl IntoIterator<Item = Attr>) {
-        self.attrs.extend(other)
+        self.push_attrs(other);
     }
 }
 
@@ -305,6 +315,26 @@ impl IntoIterator for ContentAttrs {
 
     fn into_iter(self) -> Self::IntoIter {
         self.attrs.into_iter().filter(|attr| attr.is_variadic())
+    }
+}
+
+impl ContentHeader {
+
+    /// Update indices after a vector insertion (that wasn't at the end).
+    fn update_indices_after(&mut self, start_index: usize, delta: isize) {
+        for index in [
+            &mut self.span_index, &mut self.styles_index, &mut self.location_index
+        ] {
+            if let Some(index) = index {
+                if *index >= start_index {
+                    if delta >= 0 {
+                        index.checked_add(delta as usize).unwrap();
+                    } else {
+                        index.checked_sub(delta as usize).unwrap();
+                    }
+                }
+            }
+        }
     }
 }
 

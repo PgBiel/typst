@@ -42,11 +42,16 @@ impl Content {
         let mut iter = iter.into_iter();
         let Some(first) = iter.next() else { return Self::empty() };
         let Some(second) = iter.next() else { return first };
-        let mut content = Content::empty();
-        content.attrs.push_child(first);
-        content.attrs.push_child(second);
-        content.attrs.push_children(iter);
-        content
+
+        let mut attrs = ContentAttrs::new();
+        attrs.push_children([first, second]
+            .into_iter()
+            .chain(iter));
+
+        Self {
+            func: SequenceElem::func(),
+            attrs
+        }
     }
 
     /// The element function of the contained content.
@@ -56,7 +61,7 @@ impl Content {
 
     /// Whether the content is an empty sequence.
     pub fn is_empty(&self) -> bool {
-        self.is::<SequenceElem>() && self.attrs.is_empty()
+        self.is::<SequenceElem>() && self.attrs.is_childless()
     }
 
     /// Whether the contained element is of type `T`.
