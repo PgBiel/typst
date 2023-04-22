@@ -1,3 +1,5 @@
+mod attrs;
+
 use std::any::TypeId;
 use std::fmt::{self, Debug, Formatter, Write};
 use std::iter::Sum;
@@ -22,19 +24,6 @@ use crate::util::pretty_array_like;
 pub struct Content {
     func: ElemFunc,
     attrs: EcoVec<Attr>,
-}
-
-/// Attributes that can be attached to content.
-#[derive(Debug, Clone, PartialEq, Hash)]
-enum Attr {
-    Span(Span),
-    Field(EcoString),
-    Value(Prehashed<Value>),
-    Child(Prehashed<Content>),
-    Styles(Styles),
-    Prepared,
-    Guard(Guard),
-    Location(Location),
 }
 
 impl Content {
@@ -102,8 +91,8 @@ impl Content {
 
     /// Whether the contained element has the given capability.
     pub fn can<C>(&self) -> bool
-    where
-        C: ?Sized + 'static,
+        where
+            C: ?Sized + 'static,
     {
         (self.func.0.vtable)(TypeId::of::<C>()).is_some()
     }
@@ -117,8 +106,8 @@ impl Content {
     /// Cast to a trait object if the contained element has the given
     /// capability.
     pub fn with<C>(&self) -> Option<&C>
-    where
-        C: ?Sized + 'static,
+        where
+            C: ?Sized + 'static,
     {
         let vtable = (self.func.0.vtable)(TypeId::of::<C>())?;
         let data = self as *const Self as *const ();
@@ -128,8 +117,8 @@ impl Content {
     /// Cast to a mutable trait object if the contained element has the given
     /// capability.
     pub fn with_mut<C>(&mut self) -> Option<&mut C>
-    where
-        C: ?Sized + 'static,
+        where
+            C: ?Sized + 'static,
     {
         let vtable = (self.func.0.vtable)(TypeId::of::<C>())?;
         let data = self as *mut Self as *mut ();
@@ -383,8 +372,8 @@ impl Content {
 
     /// Traverse this content.
     fn traverse<'a, F>(&'a self, f: &mut F)
-    where
-        F: FnMut(&'a Content),
+        where
+            F: FnMut(&'a Content),
     {
         f(self);
 
@@ -398,8 +387,8 @@ impl Content {
 
         /// Walks a given value to find any content that matches the selector.
         fn walk_value<'a, F>(value: &'a Value, f: &mut F)
-        where
-            F: FnMut(&'a Content),
+            where
+                F: FnMut(&'a Content),
         {
             match value {
                 Value::Content(content) => content.traverse(f),
@@ -490,50 +479,6 @@ impl AddAssign for Content {
 impl Sum for Content {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         Self::sequence(iter)
-    }
-}
-
-impl Attr {
-    fn child(&self) -> Option<&Content> {
-        match self {
-            Self::Child(child) => Some(child),
-            _ => None,
-        }
-    }
-
-    fn styles(&self) -> Option<&Styles> {
-        match self {
-            Self::Styles(styles) => Some(styles),
-            _ => None,
-        }
-    }
-
-    fn styles_mut(&mut self) -> Option<&mut Styles> {
-        match self {
-            Self::Styles(styles) => Some(styles),
-            _ => None,
-        }
-    }
-
-    fn field(&self) -> Option<&EcoString> {
-        match self {
-            Self::Field(field) => Some(field),
-            _ => None,
-        }
-    }
-
-    fn value(&self) -> Option<&Value> {
-        match self {
-            Self::Value(value) => Some(value),
-            _ => None,
-        }
-    }
-
-    fn span(&self) -> Option<Span> {
-        match self {
-            Self::Span(span) => Some(*span),
-            _ => None,
-        }
     }
 }
 
