@@ -5,8 +5,8 @@ use std::fmt::{self, Debug, Formatter, Write};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign};
 
-use comemo::Prehashed;
-use ecow::{eco_format, EcoString, EcoVec};
+use attrs::ContentAttrs;
+use ecow::{eco_format, EcoString};
 
 use super::{
     element, Behave, Behaviour, ElemFunc, Element, Fold, Guard, Label, Locatable,
@@ -23,13 +23,13 @@ use crate::util::pretty_array_like;
 #[allow(clippy::derived_hash_with_manual_eq)]
 pub struct Content {
     func: ElemFunc,
-    attrs: EcoVec<Attr>,
+    attrs: ContentAttrs,
 }
 
 impl Content {
     /// Create an empty element.
     pub fn new(func: ElemFunc) -> Self {
-        Self { func, attrs: EcoVec::new() }
+        Self { func, attrs: ContentAttrs::new() }
     }
 
     /// Create empty content.
@@ -43,11 +43,9 @@ impl Content {
         let Some(first) = iter.next() else { return Self::empty() };
         let Some(second) = iter.next() else { return first };
         let mut content = Content::empty();
-        content.attrs.push(Attr::Child(Prehashed::new(first)));
-        content.attrs.push(Attr::Child(Prehashed::new(second)));
-        content
-            .attrs
-            .extend(iter.map(|child| Attr::Child(Prehashed::new(child))));
+        content.attrs.push_child(first);
+        content.attrs.push_child(second);
+        content.attrs.push_children(iter);
         content
     }
 
@@ -76,23 +74,18 @@ impl Content {
         if !self.is::<SequenceElem>() {
             return None;
         }
-        Some(self.attrs.iter().filter_map(Attr::child))
+        Some(self.attrs.children_ref())
     }
 
-    /// Access the child and styles.
+    /// Access the element and its styles.
     pub fn to_styled(&self) -> Option<(&Content, &Styles)> {
-        if !self.is::<StyledElem>() {
-            return None;
-        }
-        let child = self.attrs.iter().find_map(Attr::child)?;
-        let styles = self.attrs.iter().find_map(Attr::styles)?;
-        Some((child, styles))
+        self.attrs.styles().map(|styles| (self, styles))
     }
 
     /// Whether the contained element has the given capability.
     pub fn can<C>(&self) -> bool
-        where
-            C: ?Sized + 'static,
+    where
+        C: ?Sized + 'static,
     {
         (self.func.0.vtable)(TypeId::of::<C>()).is_some()
     }
@@ -106,8 +99,8 @@ impl Content {
     /// Cast to a trait object if the contained element has the given
     /// capability.
     pub fn with<C>(&self) -> Option<&C>
-        where
-            C: ?Sized + 'static,
+    where
+        C: ?Sized + 'static,
     {
         let vtable = (self.func.0.vtable)(TypeId::of::<C>())?;
         let data = self as *const Self as *const ();
@@ -117,8 +110,8 @@ impl Content {
     /// Cast to a mutable trait object if the contained element has the given
     /// capability.
     pub fn with_mut<C>(&mut self) -> Option<&mut C>
-        where
-            C: ?Sized + 'static,
+    where
+        C: ?Sized + 'static,
     {
         let vtable = (self.func.0.vtable)(TypeId::of::<C>())?;
         let data = self as *mut Self as *mut ();
@@ -127,13 +120,13 @@ impl Content {
 
     /// The content's span.
     pub fn span(&self) -> Span {
-        self.attrs.iter().find_map(Attr::span).unwrap_or(Span::detached())
+        self.attrs.span().unwrap_or(Span::detached())
     }
 
     /// Attach a span to the content if it doesn't already have one.
     pub fn spanned(mut self, span: Span) -> Self {
         if self.span().is_detached() {
-            self.attrs.push(Attr::Span(span));
+            self.attrs.set_span(span);
         }
         self
     }
@@ -150,16 +143,7 @@ impl Content {
 
     /// Attach a field to the content.
     pub fn push_field(&mut self, name: impl Into<EcoString>, value: impl Into<Value>) {
-        let name = name.into();
-        if let Some(i) = self.attrs.iter().position(|attr| match attr {
-            Attr::Field(field) => *field == name,
-            _ => false,
-        }) {
-            self.attrs.make_mut()[i + 1] = Attr::Value(Prehashed::new(value.into()));
-        } else {
-            self.attrs.push(Attr::Field(name));
-            self.attrs.push(Attr::Value(Prehashed::new(value.into())));
-        }
+        self.attrs.push_field(name, value);
     }
 
     /// Access a field on the content.
@@ -206,12 +190,7 @@ impl Content {
     ///
     /// Does not include synthesized fields for sequence and styled elements.
     pub fn fields_ref(&self) -> impl Iterator<Item = (&EcoString, &Value)> {
-        let mut iter = self.attrs.iter();
-        std::iter::from_fn(move || {
-            let field = iter.find_map(Attr::field)?;
-            let value = iter.next()?.value()?;
-            Some((field, value))
-        })
+        self.attrs.fields_ref()
     }
 
     /// Try to access a field on the content as a specified type.
@@ -253,9 +232,7 @@ impl Content {
 
     /// Style this content with a style entry.
     pub fn styled(mut self, style: impl Into<Style>) -> Self {
-        if self.is::<StyledElem>() {
-            let prev =
-                self.attrs.make_mut().iter_mut().find_map(Attr::styles_mut).unwrap();
+        if let Some(prev) = self.attrs.styles_mut() {
             prev.apply_one(style.into());
             self
         } else {
@@ -269,17 +246,12 @@ impl Content {
             return self;
         }
 
-        if self.is::<StyledElem>() {
-            let prev =
-                self.attrs.make_mut().iter_mut().find_map(Attr::styles_mut).unwrap();
+        if let Some(prev) = self.attrs.styles_mut() {
             prev.apply(styles);
-            self
         } else {
-            let mut content = Content::new(StyledElem::func());
-            content.attrs.push(Attr::Child(Prehashed::new(self)));
-            content.attrs.push(Attr::Styles(styles));
-            content
+            self.attrs.set_styles(styles);
         }
+        self
     }
 
     /// Style this content with a recipe, eagerly applying it if possible.
@@ -301,28 +273,28 @@ impl Content {
 
     /// Disable a show rule recipe.
     pub fn guarded(mut self, guard: Guard) -> Self {
-        self.attrs.push(Attr::Guard(guard));
+        self.attrs.push_guard(guard);
         self
     }
 
     /// Check whether a show rule recipe is disabled.
     pub fn is_guarded(&self, guard: Guard) -> bool {
-        self.attrs.contains(&Attr::Guard(guard))
+        self.attrs.is_guarded(guard)
     }
 
     /// Whether no show rule was executed for this content so far.
     pub fn is_pristine(&self) -> bool {
-        !self.attrs.iter().any(|modifier| matches!(modifier, Attr::Guard(_)))
+        self.attrs.is_pristine()
     }
 
     /// Whether this content has already been prepared.
     pub fn is_prepared(&self) -> bool {
-        self.attrs.contains(&Attr::Prepared)
+        self.attrs.is_prepared()
     }
 
     /// Mark this content as prepared.
     pub fn mark_prepared(&mut self) {
-        self.attrs.push(Attr::Prepared);
+        self.attrs.set_prepared();
     }
 
     /// Whether the content needs to be realized specially.
@@ -335,15 +307,12 @@ impl Content {
 
     /// This content's location in the document flow.
     pub fn location(&self) -> Option<Location> {
-        self.attrs.iter().find_map(|modifier| match modifier {
-            Attr::Location(location) => Some(*location),
-            _ => None,
-        })
+        self.attrs.location()
     }
 
     /// Attach a location to this content.
     pub fn set_location(&mut self, location: Location) {
-        self.attrs.push(Attr::Location(location));
+        self.attrs.set_location(location);
     }
 
     /// Queries the content tree for all elements that match the given selector.
@@ -372,34 +341,10 @@ impl Content {
 
     /// Traverse this content.
     fn traverse<'a, F>(&'a self, f: &mut F)
-        where
-            F: FnMut(&'a Content),
+    where
+        F: FnMut(&'a Content),
     {
-        f(self);
-
-        for attr in &self.attrs {
-            match attr {
-                Attr::Child(child) => child.traverse(f),
-                Attr::Value(value) => walk_value(value, f),
-                _ => {}
-            }
-        }
-
-        /// Walks a given value to find any content that matches the selector.
-        fn walk_value<'a, F>(value: &'a Value, f: &mut F)
-            where
-                F: FnMut(&'a Content),
-        {
-            match value {
-                Value::Content(content) => content.traverse(f),
-                Value::Array(array) => {
-                    for value in array {
-                        walk_value(value, f);
-                    }
-                }
-                _ => {}
-            }
-        }
+        self.attrs.traverse(self, f);
     }
 }
 
@@ -420,7 +365,7 @@ impl Debug for Content {
             .map(|(name, value)| eco_format!("{name}: {value:?}"))
             .collect();
 
-        if self.is::<StyledElem>() {
+        if self.attrs.is_styled() {
             pieces.push(EcoString::from(".."));
         }
 
@@ -458,11 +403,11 @@ impl Add for Content {
                 lhs
             }
             (true, false) => {
-                lhs.attrs.push(Attr::Child(Prehashed::new(rhs)));
+                lhs.attrs.push_child(rhs);
                 lhs
             }
             (false, true) => {
-                rhs.attrs.insert(0, Attr::Child(Prehashed::new(lhs)));
+                rhs.attrs.prioritize_child(lhs);
                 rhs
             }
             (false, false) => Self::sequence([lhs, rhs]),
