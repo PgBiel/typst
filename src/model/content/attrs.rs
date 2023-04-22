@@ -117,6 +117,7 @@ impl ContentAttrs {
     /// the beginning (or replacing the existing one, if applicable).
     fn prioritize_attr(&mut self, attr: Attr) {
         if attr.is_variadic() {
+            self.init_header();
             self.attrs.insert(1, attr);
         } else {
             self.push_attr(attr);
