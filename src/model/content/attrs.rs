@@ -201,6 +201,10 @@ impl ContentAttrs {
         self.push_attrs(children.map(|child| Attr::Child(Prehashed::new(child))))
     }
 
+    pub(super) fn first_child(&self) -> Option<&Content> {
+        self.attrs.iter().find_map(Attr::child)
+    }
+
     pub(super) fn children_ref(&self) -> impl Iterator<Item = &Content> {
         self.attrs.iter().filter_map(Attr::child)
     }

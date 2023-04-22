@@ -79,7 +79,12 @@ impl Content {
 
     /// Access the element and its styles.
     pub fn to_styled(&self) -> Option<(&Content, &Styles)> {
-        self.attrs.styles().map(|styles| (self, styles))
+        if !self.is::<StyledElem>() {
+            return None;
+        }
+        let child = self.attrs.first_child()?;
+        let styles = self.attrs.styles()?;
+        Some((child, styles))
     }
 
     /// Whether the contained element has the given capability.
@@ -232,7 +237,8 @@ impl Content {
 
     /// Style this content with a style entry.
     pub fn styled(mut self, style: impl Into<Style>) -> Self {
-        if let Some(prev) = self.attrs.styles_mut() {
+        if self.is::<StyledElem>() {
+            let prev = self.attrs.styles_mut().unwrap();
             prev.apply_one(style.into());
             self
         } else {
@@ -246,12 +252,16 @@ impl Content {
             return self;
         }
 
-        if let Some(prev) = self.attrs.styles_mut() {
+        if self.is::<StyledElem>() {
+            let prev = self.attrs.styles_mut().unwrap();
             prev.apply(styles);
+            self
         } else {
-            self.attrs.set_styles(styles);
+            let mut content = Content::new(StyledElem::func());
+            content.attrs.push_child(self);
+            content.attrs.set_styles(styles);
+            content
         }
-        self
     }
 
     /// Style this content with a recipe, eagerly applying it if possible.
