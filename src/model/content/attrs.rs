@@ -59,6 +59,9 @@ impl ContentAttrs {
         self.init_header();
 
         match &attr {
+            Attr::Header(_) => {
+                panic!("Cannot push header to vector");
+            }
             Attr::Span(_) => {
                 // We have to fetch length here to avoid borrowing issues.
                 let next_index = self.attrs.len();
@@ -404,6 +407,6 @@ impl Attr {
 
     /// Returns whether a content can have more than one of this attribute.
     fn is_variadic(&self) -> bool {
-        matches!(self, Self::Child(_) | Self::Field(_) | Self::Value(_))
+        matches!(self, Self::Child(_) | Self::Field(_) | Self::Value(_) | Self::Guard(_))
     }
 }
