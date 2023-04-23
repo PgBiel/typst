@@ -44,14 +44,9 @@ impl Content {
         let Some(second) = iter.next() else { return first };
 
         let mut attrs = ContentAttrs::new();
-        attrs.push_children([first, second]
-            .into_iter()
-            .chain(iter));
+        attrs.push_children([first, second].into_iter().chain(iter));
 
-        Self {
-            func: SequenceElem::func(),
-            attrs
-        }
+        Self { func: SequenceElem::func(), attrs }
     }
 
     /// The element function of the contained content.

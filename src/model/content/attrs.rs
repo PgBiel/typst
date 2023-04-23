@@ -229,11 +229,6 @@ impl ContentAttrs {
         })
     }
 
-    /// Whether there are no attributes besides the header.
-    pub(super) fn is_empty(&self) -> bool {
-        return !self.attrs.iter().any(|attr| !matches!(attr, Attr::Header(_)));
-    }
-
     pub(super) fn is_childless(&self) -> bool {
         return !self.attrs.iter().any(|attr| matches!(attr, Attr::Child(_)));
     }
@@ -322,19 +317,18 @@ impl IntoIterator for ContentAttrs {
 }
 
 impl ContentHeader {
-
     /// Update indices after a vector insertion (that wasn't at the end).
     fn update_indices_after(&mut self, start_index: usize, delta: isize) {
-        for index in [
-            &mut self.span_index, &mut self.styles_index, &mut self.location_index
-        ] {
-            if let Some(index) = index {
-                if *index >= start_index {
-                    if delta >= 0 {
-                        *index = index.checked_add(delta as usize).unwrap();
-                    } else {
-                        *index = index.checked_sub(-delta as usize).unwrap();
-                    }
+        for index in
+            [&mut self.span_index, &mut self.styles_index, &mut self.location_index]
+                .into_iter()
+                .flatten()
+        {
+            if *index >= start_index {
+                if delta >= 0 {
+                    *index = index.checked_add(delta as usize).unwrap();
+                } else {
+                    *index = index.checked_sub(-delta as usize).unwrap();
                 }
             }
         }
