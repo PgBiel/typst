@@ -325,11 +325,7 @@ impl ContentHeader {
                 .flatten()
         {
             if *index >= start_index {
-                if delta >= 0 {
-                    *index = index.checked_add(delta as usize).unwrap();
-                } else {
-                    *index = index.checked_sub(-delta as usize).unwrap();
-                }
+                *index = index.checked_add_signed(delta).unwrap();
             }
         }
     }
