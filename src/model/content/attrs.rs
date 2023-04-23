@@ -331,9 +331,9 @@ impl ContentHeader {
             if let Some(index) = index {
                 if *index >= start_index {
                     if delta >= 0 {
-                        index.checked_add(delta as usize).unwrap();
+                        *index = index.checked_add(delta as usize).unwrap();
                     } else {
-                        index.checked_sub(delta as usize).unwrap();
+                        *index = index.checked_sub(-delta as usize).unwrap();
                     }
                 }
             }
