@@ -93,8 +93,8 @@ impl ContentAttrs {
                 let next_index = self.attrs.len();
                 let mut_attrs = self.attrs.make_mut();
                 let header = mut_attrs[0].header_mut().unwrap();
-                if let Some(location_index) = header.location_index {
-                    mut_attrs[location_index] = attr;
+                if header.location_index.is_some() {
+                    // Don't change location (due to how bibliography works)
                     return;
                 } else {
                     // Push at the end; keep track of the index.
