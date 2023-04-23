@@ -1,6 +1,5 @@
 use super::*;
 
-/// # Overlay
 /// Overlays some content over another. The first content specified is the base body,
 /// and all following content are drawn, in order, over the first one (and all previous ones),
 /// in a box with the same width and height as that base content.
@@ -41,7 +40,6 @@ impl Layout for OverlayElem {
     }
 }
 
-/// # Underlay
 /// Places some content visually below another. The first content specified is the base body,
 /// and all following content are drawn, in order, under the first one (and all previous ones),
 /// in a box with the same width and height as that base content.
@@ -78,7 +76,7 @@ impl Layout for UnderlayElem {
 
         let children = self.children();
 
-        layer_in_text(vt, styles, regions, body, children, /*is_overlay:*/ false)
+        layer_in_text(vt, styles, regions, body, children, false)
     }
 }
 
