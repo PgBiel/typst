@@ -3,9 +3,11 @@ use super::*;
 /// Overlays some content over some piece of math.
 ///
 /// ```example
-/// #let cancel(x) = $ overlay(#x, #line(stroke: 0.5pt, start: (0pt, 100%), end: (100%, 0pt))) $
+/// #let custom-cancel(x) = {
+///     $ overlay(#x, #line(stroke: blue + 0.5pt, start: (0pt, 100%), end: (100%, 0pt))) $
+/// }
 ///
-/// $ a + cancel(b) - cancel(b) $
+/// $ a + custom-cancel(xyz) - custom-cancel(xyz) $
 /// ```
 ///
 /// Display: Math Overlay
@@ -13,17 +15,17 @@ use super::*;
 #[element(LayoutMath)]
 pub struct OverlayElem {
     /// The content over which content should be placed.
-    #[required]
+    #[positional]
     pub body: Content,
 
-    /// The children to overlay over the body.
+    /// The children to lay over the body, in order (rightmost is topmost).
     #[variadic]
     pub children: Vec<Content>,
 }
 
 impl LayoutMath for OverlayElem {
     fn layout_math(&self, ctx: &mut MathContext) -> SourceResult<()> {
-        layer_in_math(ctx, self.body(), self.children(), /*is_overlay:*/ true)
+        math_layer(ctx, self.body(ctx.styles()), self.children(), true)
     }
 }
 
@@ -40,37 +42,38 @@ impl LayoutMath for OverlayElem {
 #[element(LayoutMath)]
 pub struct UnderlayElem {
     /// The content under which content should be placed.
-    #[required]
+    #[positional]
     pub body: Content,
 
-    /// The children to display under the body.
+    /// The children to lay under the body, in order (leftmost is topmost).
     #[variadic]
     pub children: Vec<Content>,
 }
 
 impl LayoutMath for UnderlayElem {
     fn layout_math(&self, ctx: &mut MathContext) -> SourceResult<()> {
-        layer_in_math(ctx, self.body(), self.children(), /*is_overlay:*/ false)
+        math_layer(ctx, self.body(ctx.styles()), self.children(), false)
     }
 }
 
 /// Performs layering (places certain content above others) in math.
-fn layer_in_math(
+fn math_layer(
     ctx: &mut MathContext,
     body: Content,
     children: Vec<Content>,
     is_overlay: bool,
 ) -> SourceResult<()> {
     let mut body = ctx.layout_frame(&body)?;
-
     let size = body.size();
+
+    // avoid conflicting with 'vt' borrow by creating a new StyleChain
     let styles = ctx.styles().to_map();
     let styles = StyleChain::new(&styles);
 
     let pod = Regions::one(size, Axes::splat(true));
 
     for child in children {
-        let layer = child.layout(&mut ctx.vt, styles, pod)?.into_frame();
+        let layer = child.layout(ctx.vt, styles, pod)?.into_frame();
 
         if is_overlay {
             body.push_frame(Point::zero(), layer);

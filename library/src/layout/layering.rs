@@ -16,11 +16,11 @@ use super::*;
 /// Category: layout
 #[element(Layout)]
 pub struct OverlayElem {
-    /// The body, upon which children will be overlaid.
+    /// The body, upon which children will be laid over.
     #[positional]
     pub body: Option<Content>,
 
-    /// The children to overlay over the body.
+    /// The children to lay over the body, in order (rightmost is the topmost).
     #[variadic]
     pub children: Vec<Content>,
 }
@@ -33,10 +33,8 @@ impl Layout for OverlayElem {
         regions: Regions,
     ) -> SourceResult<Fragment> {
         let body = self.body(styles).unwrap_or_default();
-
         let children = self.children();
-
-        layer_in_text(vt, styles, regions, body, children, /*is_overlay:*/ true)
+        markup_layer(vt, styles, regions, body, children, true)
     }
 }
 
@@ -56,11 +54,11 @@ impl Layout for OverlayElem {
 /// Category: layout
 #[element(Layout)]
 pub struct UnderlayElem {
-    /// The body, under which children will be laid out.
+    /// The body, under which children will be laid.
     #[positional]
     pub body: Option<Content>,
 
-    /// The children to place under the body.
+    /// The children to lay under the body, in order (leftmost is the topmost).
     #[variadic]
     pub children: Vec<Content>,
 }
@@ -73,15 +71,13 @@ impl Layout for UnderlayElem {
         regions: Regions,
     ) -> SourceResult<Fragment> {
         let body = self.body(styles).unwrap_or_default();
-
         let children = self.children();
-
-        layer_in_text(vt, styles, regions, body, children, false)
+        markup_layer(vt, styles, regions, body, children, false)
     }
 }
 
-/// Layer in non-math mode.
-fn layer_in_text(
+/// Layer in markup (or otherwise any) mode.
+fn markup_layer(
     vt: &mut Vt,
     styles: StyleChain,
     regions: Regions,
