@@ -106,6 +106,28 @@ impl Datetime {
         }
     }
 
+    /// Return this date's unix timestamp in milliseconds.
+    pub fn unix_timestamp(&self, offset: Option<f64>) -> Option<i64> {
+        let with_offset = |d: &PrimitiveDateTime| {
+            Some(match offset {
+                Some(offset) => d.assume_offset(
+                    time::UtcOffset::from_whole_seconds((offset * 3600.0).floor() as i32)
+                        .ok()?,
+                ),
+                // TODO: automatically get local offset from World
+                None => d.assume_utc(),
+            })
+        };
+
+        Some(match self {
+            Datetime::Date(date) => {
+                with_offset(&date.with_hms(0, 0, 0).ok()?)?.unix_timestamp()
+            }
+            Datetime::Time(time) => time.millisecond().into(),
+            Datetime::Datetime(datetime) => with_offset(datetime)?.unix_timestamp(),
+        })
+    }
+
     /// Create a datetime from year, month, and day.
     pub fn from_ymd(year: i32, month: u8, day: u8) -> Option<Self> {
         Some(Datetime::Date(
