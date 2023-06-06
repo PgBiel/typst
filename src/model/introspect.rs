@@ -299,6 +299,23 @@ impl Introspector {
                 }
                 list
             }
+            Selector::In { selector, parent, deep } => {
+                let all_parents = self.query(parent);
+                let all_children = all_parents
+                    .iter()
+                    .flat_map(|parent| {
+                        if *deep {
+                            parent.query((**selector).clone())
+                        } else {
+                            parent.query_children(selector)
+                        }
+                    })
+                    .collect::<EcoVec<_>>();
+                self.all()
+                    .filter(|c| all_children.iter().any(|p| *p == &(***c)))
+                    .cloned()
+                    .collect()
+            }
         };
 
         self.queries.borrow_mut().insert(hash, output.clone());

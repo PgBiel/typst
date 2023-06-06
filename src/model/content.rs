@@ -380,6 +380,25 @@ impl Content {
         results
     }
 
+    /// Queries the top level of the content tree for all elements that match
+    /// the given selector.
+    ///
+    /// Elements produced in `show` rules will not be included in the results.
+    #[tracing::instrument(skip_all)]
+    pub fn query_children(&self, selector: &Selector) -> Vec<&Content> {
+        let attrs = if let Some((content, _)) = self.to_styled() {
+            &content.attrs
+        } else {
+            &self.attrs
+        };
+        attrs
+            .iter()
+            .filter_map(|attribute| {
+                attribute.child().filter(|child| selector.matches(child))
+            })
+            .collect()
+    }
+
     /// Queries the content tree for the first element that match the given
     /// selector.
     ///

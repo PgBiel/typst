@@ -158,7 +158,8 @@ fn try_apply(
             | Selector::Location(_)
             | Selector::Can(_)
             | Selector::Before { .. }
-            | Selector::After { .. },
+            | Selector::After { .. }
+            | Selector::In { .. },
         ) => Ok(None),
 
         None => Ok(None),

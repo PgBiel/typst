@@ -191,6 +191,11 @@ pub fn call(
                             args.named_or_find::<bool>("inclusive")?.unwrap_or(true);
                         selector.clone().after(location, inclusive).into()
                     }
+                    "in" => {
+                        let parent = args.expect::<Selector>("selector")?;
+                        let deep = args.named_or_find::<bool>("deep")?.unwrap_or(true);
+                        selector.clone().in_(parent, deep).into()
+                    }
                     _ => return missing(),
                 }
             } else if let Some(&datetime) = dynamic.downcast::<Datetime>() {
@@ -378,7 +383,13 @@ pub fn methods_on(type_name: &str) -> &[(&'static str, bool)] {
         "function" => &[("where", true), ("with", true)],
         "arguments" => &[("named", false), ("pos", false)],
         "location" => &[("page", false), ("position", false), ("page-numbering", false)],
-        "selector" => &[("or", true), ("and", true), ("before", true), ("after", true)],
+        "selector" => &[
+            ("or", true),
+            ("and", true),
+            ("before", true),
+            ("after", true),
+            ("in", true),
+        ],
         "counter" => &[
             ("display", true),
             ("at", true),

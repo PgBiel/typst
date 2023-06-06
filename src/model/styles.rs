@@ -278,6 +278,8 @@ pub enum Selector {
     Before { selector: Arc<Self>, end: Arc<Self>, inclusive: bool },
     /// Matches all matches of `selector` after `start`.
     After { selector: Arc<Self>, start: Arc<Self>, inclusive: bool },
+    /// Matches all matches of `selector` that are children of `parent`.
+    In { selector: Arc<Self>, parent: Arc<Self>, deep: bool },
 }
 
 impl Selector {
@@ -321,6 +323,15 @@ impl Selector {
         }
     }
 
+    /// Transforms this selector into a [`Selector::In`] selector.
+    pub fn in_(self, parent: impl Into<Self>, deep: bool) -> Self {
+        Self::In {
+            selector: Arc::new(self),
+            parent: Arc::new(parent.into()),
+            deep,
+        }
+    }
+
     /// Whether the selector matches for the target.
     pub fn matches(&self, target: &Content) -> bool {
         match self {
@@ -341,7 +352,7 @@ impl Selector {
             Self::And(selectors) => selectors.iter().all(move |sel| sel.matches(target)),
             Self::Location(location) => target.location() == Some(*location),
             // Not supported here.
-            Self::Before { .. } | Self::After { .. } => false,
+            Self::Before { .. } | Self::After { .. } | Self::In { .. } => false,
         }
     }
 }
@@ -386,6 +397,15 @@ impl Debug for Selector {
                 split.fmt(f)?;
                 if !*inclusive {
                     f.write_str(", inclusive: false")?;
+                }
+                f.write_char(')')
+            }
+            Self::In { selector, parent, deep } => {
+                selector.fmt(f)?;
+                f.write_str(".in(")?;
+                parent.fmt(f)?;
+                if !*deep {
+                    f.write_str(", deep: false")?;
                 }
                 f.write_char(')')
             }
@@ -436,7 +456,8 @@ impl Cast for LocatableSelector {
                     }
                 }
                 Selector::Before { selector, end: split, .. }
-                | Selector::After { selector, start: split, .. } => {
+                | Selector::After { selector, start: split, .. }
+                | Selector::In { selector, parent: split, .. } => {
                     for selector in [selector, split] {
                         validate(selector)?;
                     }
@@ -491,14 +512,13 @@ impl Cast for ShowableSelector {
                 Selector::Elem(_, _) => {}
                 Selector::Label(_) => {}
                 Selector::Regex(_) => {}
+                Selector::In { .. } => {}
                 Selector::Or(_)
                 | Selector::And(_)
                 | Selector::Location(_)
                 | Selector::Can(_)
                 | Selector::Before { .. }
-                | Selector::After { .. } => {
-                    Err("this selector cannot be used with show")?
-                }
+                | Selector::After { .. } => Err("this selector cannot be used with show")?,
             }
             Ok(())
         }
