@@ -518,7 +518,9 @@ impl Cast for ShowableSelector {
                 | Selector::Location(_)
                 | Selector::Can(_)
                 | Selector::Before { .. }
-                | Selector::After { .. } => Err("this selector cannot be used with show")?,
+                | Selector::After { .. } => {
+                    Err("this selector cannot be used with show")?
+                }
             }
             Ok(())
         }

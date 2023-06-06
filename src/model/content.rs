@@ -366,6 +366,16 @@ impl Content {
         self.attrs.push(Attr::Location(location));
     }
 
+    pub fn child_of(child: &Prehashed<Content>, parent: &Content, deep: bool) -> bool {
+        parent.attrs.iter().any(|attr| match attr {
+            Attr::Child(parent_child) => {
+                parent_child == child
+                    || (deep && Self::child_of(child, parent_child, deep))
+            }
+            _ => false,
+        })
+    }
+
     /// Queries the content tree for all elements that match the given selector.
     ///
     /// Elements produced in `show` rules will not be included in the results.
