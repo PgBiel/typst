@@ -93,7 +93,7 @@ pub(crate) fn field_mut(
 
                 if new_length.em != Em::zero() {
                     return Err(eco_format!("cannot assign a length with non-zero em units ({new_length:?}) to another length's 'abs' field"))
-                        .hint(eco_format!("assign 'length.abs' instead to ignore its em component"))
+                        .hint("assign 'length.abs' instead to ignore its em component")
                         .at(span);
                 }
 
