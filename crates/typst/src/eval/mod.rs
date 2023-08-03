@@ -1976,25 +1976,25 @@ impl Access for ast::FieldAccess {
     }
 }
 
+/// Access a value mutably, if it is a dictionary or has static fields.
 fn access_value<'a>(
     vm: &'a mut Vm,
     access: &ast::FieldAccess,
 ) -> SourceResult<&'a mut Value> {
-    match access.target().access(vm)? {
-        value @ Value::Dict(_) => Ok(value),
-        value if !fields::fields_on(value.type_name()).is_empty() => Ok(value),
-        value => {
-            let type_name = value.type_name();
-            let span = access.target().span();
-            if matches!(
-                value, // those types have their own field getters
-                Value::Symbol(_) | Value::Content(_) | Value::Module(_) | Value::Func(_)
-            ) {
-                bail!(span, "cannot mutate fields on {type_name}");
-            } else {
-                // fields::fields_on(type_name).is_empty() is true
-                bail!(span, "{type_name} does not have accessible fields");
-            }
+    let value = access.target().access(vm)?;
+    if matches!(value, Value::Dict(_)) || !fields::fields_on(value.type_name()).is_empty()
+    {
+        Ok(value)
+    } else {
+        let type_name = value.type_name();
+        let span = access.target().span();
+        if matches!(
+            value, // those types have their own field getters
+            Value::Symbol(_) | Value::Content(_) | Value::Module(_) | Value::Func(_)
+        ) {
+            bail!(span, "cannot mutate fields on {type_name}");
+        } else {
+            bail!(span, "{type_name} does not have accessible fields");
         }
     }
 }
