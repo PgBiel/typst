@@ -274,8 +274,22 @@
 ---
 #{
   let a = right + horizon
+  // Error: 3-21 expected alignment, found 2d alignment
+  a.x = top + center
+}
+
+---
+#{
+  let a = right + horizon
   // Error: 3-13 alignment must be vertical
   a.y = left
+}
+
+---
+#{
+  let a = right + horizon
+  // Error: 3-23 expected alignment, found 2d alignment
+  a.y = horizon + left
 }
 
 ---
