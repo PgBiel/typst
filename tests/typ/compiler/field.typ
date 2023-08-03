@@ -205,6 +205,37 @@
 }
 
 ---
+// Test 2d alignment field mutability
+#{
+  let a1 = start + top
+  let a2 = right + horizon
+  let a3 = left + bottom
+
+  a1.x = center
+  a2.y = bottom
+  a3.x = end
+  a3.y = top
+
+  test(a1, center + top)
+  test(a2, right + bottom)
+  test(a3, end + top)
+}
+
+---
+#{
+  let a = right + horizon
+  // Error: 3-12 alignment must be horizontal
+  a.x = top
+}
+
+---
+#{
+  let a = right + horizon
+  // Error: 3-13 alignment must be vertical
+  a.y = left
+}
+
+---
 #{
   let object = sym.eq.not
   // Error: 3-9 cannot mutate fields on symbol
