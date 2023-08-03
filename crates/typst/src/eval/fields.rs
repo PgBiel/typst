@@ -1,7 +1,7 @@
 use ecow::{eco_format, EcoString};
 
 use crate::diag::{At, Hint, SourceResult, StrResult};
-use crate::geom::{Axes, Em, GenAlign, Length, PartialStroke, Scalar, Smart, Stroke};
+use crate::geom::{Axes, Em, GenAlign, Length, PartialStroke, Scalar, Smart, Stroke, HorizontalAlign, VerticalAlign};
 use crate::syntax::Span;
 
 use super::{IntoValue, Value};
@@ -139,8 +139,8 @@ pub(crate) fn field_mut(
             } else if let Some(align2d) = dynamic.downcast::<Axes<GenAlign>>() {
                 let mut new_align2d = *align2d;
                 match field {
-                    "x" => new_align2d.x = new_value.cast().at(span)?,
-                    "y" => new_align2d.y = new_value.cast().at(span)?,
+                    "x" => new_align2d.x = new_value.cast::<HorizontalAlign>().at(span)?.into(),
+                    "y" => new_align2d.y = new_value.cast::<VerticalAlign>().at(span)?.into(),
                     _ => return missing(),
                 }
                 *value = new_align2d.into_value();
