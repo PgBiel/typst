@@ -81,7 +81,7 @@ pub(crate) fn field_mut(
     span: Span,
 ) -> SourceResult<Value> {
     let name = value.type_name();
-    let not_supported = || Err(no_fields(name)).at(span);
+    let not_supported = || Err(no_fields_mut(name)).at(span);
     let missing = || Err(missing_field(name, field)).at(span);
 
     // Special cases, such as module and dict, are already handled by eval/mod.rs
@@ -166,6 +166,13 @@ pub(crate) fn field_mut(
 #[cold]
 fn no_fields(type_name: &str) -> EcoString {
     eco_format!("cannot access fields on type {type_name}")
+}
+
+/// The error message for a type not supporting field access ('field_mut'
+/// variant).
+#[cold]
+fn no_fields_mut(type_name: &str) -> EcoString {
+    eco_format!("{type_name} does not have accessible fields")
 }
 
 /// The missing field error message.
