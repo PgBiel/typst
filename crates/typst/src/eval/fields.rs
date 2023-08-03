@@ -1,7 +1,7 @@
 use ecow::{eco_format, EcoString};
 
-use crate::diag::{SourceResult, StrResult};
-use crate::geom::{Axes, GenAlign, PartialStroke, Stroke};
+use crate::diag::{At, Hint, SourceResult, StrResult};
+use crate::geom::{Axes, Em, GenAlign, Length, PartialStroke, Scalar, Smart, Stroke};
 use crate::syntax::Span;
 
 use super::{IntoValue, Value};
@@ -72,12 +72,86 @@ pub(crate) fn field(value: &Value, field: &str) -> StrResult<Value> {
 
 /// Attempts to change the value of a field.
 pub(crate) fn field_mut(
-    _value: &mut Value,
-    _field: &str,
-    _new_value: Value,
-    _span: Span,
+    value: &mut Value,
+    field: &str,
+    new_value: Value,
+    span: Span,
 ) -> SourceResult<Value> {
-    todo!();
+    let name = value.type_name();
+    let not_supported = || Err(no_fields(name)).at(span);
+    let missing = || Err(missing_field(name, field)).at(span);
+
+    // Special cases, such as module and dict, are already handled by eval/mod.rs
+    match value {
+        Value::Length(length) => match field {
+            "em" => length.em = Em::new(new_value.cast().at(span)?),
+            "abs" => {
+                let new_length: Length = new_value.cast().at(span)?;
+
+                if new_length.em != Em::zero() {
+                    return Err(eco_format!("cannot assign a length with non-zero em units ({new_length:?}) to another length's 'abs' field"))
+                        .hint(eco_format!("assign 'length.abs' instead to ignore its em component"))
+                        .at(span);
+                }
+
+                length.abs = new_length.abs;
+            }
+            _ => return missing(),
+        },
+        Value::Relative(rel) => match field {
+            "ratio" => rel.rel = new_value.cast().at(span)?,
+            "length" => rel.abs = new_value.cast().at(span)?,
+            _ => return missing(),
+        },
+        Value::Dyn(dynamic) => {
+            if let Some(stroke) = dynamic.downcast::<PartialStroke>() {
+                // workaround to the absence of downcast_mut, which is not
+                // simple to implement due to the lack of a 'Clone' bound in
+                // 'dyn Bound' (used in Dynamic's only field)
+                let mut new_stroke = stroke.clone();
+                match field {
+                    // wrap in Smart::Custom to avoid having 'auto'
+                    // accidentally be a valid value here
+                    // (would be inconsistent with the constructor, at least)
+                    "paint" => {
+                        new_stroke.paint = Smart::Custom(new_value.cast().at(span)?)
+                    }
+                    "thickness" => {
+                        new_stroke.thickness = Smart::Custom(new_value.cast().at(span)?)
+                    }
+                    "cap" => {
+                        new_stroke.line_cap = Smart::Custom(new_value.cast().at(span)?)
+                    }
+                    "join" => {
+                        new_stroke.line_join = Smart::Custom(new_value.cast().at(span)?)
+                    }
+                    "dash" => {
+                        new_stroke.dash_pattern =
+                            Smart::Custom(new_value.cast().at(span)?)
+                    }
+                    "miter-limit" => {
+                        new_stroke.miter_limit =
+                            Smart::Custom(Scalar(new_value.cast().at(span)?))
+                    }
+                    _ => return missing(),
+                }
+                *value = new_stroke.into_value();
+            } else if let Some(align2d) = dynamic.downcast::<Axes<GenAlign>>() {
+                let mut new_align2d = *align2d;
+                match field {
+                    "x" => new_align2d.x = new_value.cast().at(span)?,
+                    "y" => new_align2d.y = new_value.cast().at(span)?,
+                    _ => return missing(),
+                }
+                *value = new_align2d.into_value();
+            } else {
+                return not_supported();
+            }
+        }
+        _ => return not_supported(),
+    };
+
+    Ok(Value::None)
 }
 
 /// The error message for a type not supporting field access.
