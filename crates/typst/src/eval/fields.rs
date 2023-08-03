@@ -7,7 +7,7 @@ use crate::geom::{
 };
 use crate::syntax::Span;
 
-use super::{IntoValue, Value};
+use super::{Dynamic, IntoValue, Value};
 
 /// Try to access a field on a value.
 /// This function is exclusively for types which have
@@ -138,7 +138,7 @@ pub(crate) fn field_mut(
                     }
                     _ => return missing(),
                 }
-                *value = new_stroke.into_value();
+                *dynamic = Dynamic::new(new_stroke);
             } else if let Some(align2d) = dynamic.downcast::<Axes<GenAlign>>() {
                 let mut new_align2d = *align2d;
                 match field {
@@ -151,7 +151,7 @@ pub(crate) fn field_mut(
                     }
                     _ => return missing(),
                 }
-                *value = new_align2d.into_value();
+                *dynamic = Dynamic::new(new_align2d);
             } else {
                 return not_supported();
             }
