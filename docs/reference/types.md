@@ -98,6 +98,13 @@ A length has the following fields:
 
 #(40em + 2pt).abs
 #(5em).abs
+
+#{
+  let l = 4pt + 2em
+  l.abs = 10pt
+  l.em = 5
+  l
+}
 ```
 
 ## Methods
@@ -193,6 +200,13 @@ A relative length has the following fields:
 
 #(100% - 50pt).length
 #(100% - 50pt).ratio
+
+#{
+  let r = 68% + 9pt + 2em
+  r.ratio = 77%
+  r.length = 4cm
+  r
+}
 ```
 
 # Fraction
