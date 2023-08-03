@@ -150,6 +150,37 @@
 #test((horizon + center).y, horizon)
 
 ---
+// Test length field mutability
+#{
+  let l1 = 1pt
+  let l2 = 2pt
+  let l3 = 2em
+  let l4 = 3em
+  let l5 = 2pt + 2em
+
+  l1.abs = 100pt
+  l2.em = 500
+  l3.em = 100
+  l4.abs = 5pt
+  l5.abs = 500cm
+  l5.em = 300
+
+  test(l1, 100pt)
+  test(l2, 2pt + 500em)
+  test(l3, 100em)
+  test(l4, 5pt + 3em)
+  test(l5, 500cm + 300em)
+}
+
+---
+#{
+  let l = 1pt
+  // Error: 3-20 cannot assign a length with non-zero em units (6pt + 3em) to another length's 'abs' field
+  // Hint: 3-20 assign 'length.abs' instead to ignore its em component
+  l.abs = 6pt + 3em
+}
+
+---
 #{
   let object = sym.eq.not
   // Error: 3-9 cannot mutate fields on symbol
@@ -189,12 +220,4 @@
   let object = 10
   // Error: 3-9 integer does not have accessible fields
   object.property = "value"
-}
-
----
-#{
-  let s = 1pt + red
-  // Error: 3-4 fields on stroke are not yet mutable
-  // Hint: 3-4 try creating a new stroke with the updated field value instead
-  s.thickness = 5pt
 }
