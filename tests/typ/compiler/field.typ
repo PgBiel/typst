@@ -333,3 +333,17 @@
   // Error: 3-9 integer does not have accessible fields
   object.property = "value"
 }
+
+---
+#{
+  let object = 5pt + red
+  // Error: 10-18 stroke does not contain field "property"
+  object.property
+}
+
+---
+#{
+  let object = 5pt + red
+  // Error: 3-22 stroke does not contain field "property"
+  object.property = 5
+}
