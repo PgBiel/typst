@@ -205,6 +205,49 @@
 }
 
 ---
+// Test stroke field mutability
+#{
+  let to-stroke(s) = rect(stroke: s).stroke
+  let s1 = 1pt + blue
+  let s2 = 2em + red
+  let s3 = 3cm + 2em + black
+  let s4 = 2mm + 33em + white
+  let s5 = 3pt + yellow
+  let s6 = 4mm + purple
+  let s7 = 98pt + green
+  let s8 = to-stroke((paint: cmyk(1%, 2%, 3%, 4%), thickness: 4em + 2pt, cap: "round", join: "bevel", miter-limit: 5.0, dash: (3pt, "dot", 4em)))
+
+  s1.paint = lime
+  s2.thickness = 3cm
+  s3.cap = "round"
+  s4.join = "bevel"
+  s5.dash = (3pt, "dot", 4em)
+  s6.miter-limit = 6.0
+  s7.dash = (array: (3pt, "dot", 33em), phase: 5em)
+  s7.cap = "round"
+  s8.paint = luma(95)
+  s8.miter-limit = 1.0
+  s8.dash = "loosely-dotted"
+
+  test(s1, 1pt + lime)
+  test(s2, 3cm + red)
+  test(s3, to-stroke((paint: black, thickness: 3cm + 2em, cap: "round")))
+  test(s4, to-stroke((paint: white, thickness: 2mm + 33em, join: "bevel")))
+  test(s5, to-stroke((paint: yellow, thickness: 3pt, dash: (3pt, "dot", 4em))))
+  test(s6, to-stroke((paint: purple, thickness: 4mm, miter-limit: 6.0)))
+  test(s7, to-stroke((paint: green, thickness: 98pt, dash: (array: (3pt, "dot", 33em), phase: 5em), cap: "round")))
+  test(s8, to-stroke((paint: luma(95), thickness: 4em + 2pt, cap: "round", join: "bevel", miter-limit: 1.0, dash: "loosely-dotted")))
+}
+
+---
+// Ensure we don't accidentally allow 'auto' due to Smart fields in PartialStroke
+#{
+  let s = 1pt + blue
+  // Error: 3-15 expected "butt", "round", or "square", found auto
+  s.cap = auto
+}
+
+---
 // Test 2d alignment field mutability
 #{
   let a1 = start + top
