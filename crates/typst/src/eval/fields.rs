@@ -79,7 +79,7 @@ pub(crate) fn field_mut(
     field: &str,
     new_value: Value,
     span: Span,
-) -> SourceResult<Value> {
+) -> SourceResult<()> {
     let name = value.type_name();
     let not_supported = || Err(no_fields_mut(name)).at(span);
     let missing = || Err(missing_field(name, field)).at(span);
@@ -159,7 +159,7 @@ pub(crate) fn field_mut(
         _ => return not_supported(),
     };
 
-    Ok(Value::None)
+    Ok(())
 }
 
 /// The error message for a type not supporting field access.

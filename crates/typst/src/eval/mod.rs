@@ -1085,12 +1085,13 @@ fn apply_assignment(
                     return Ok(Value::None);
                 }
                 value => {
-                    return fields::field_mut(
+                    fields::field_mut(
                         value,
                         access.field().as_str(),
                         rhs,
                         binary.span(),
-                    )
+                    )?;
+                    return Ok(Value::None);
                 }
             }
         }
