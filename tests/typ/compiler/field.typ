@@ -150,6 +150,30 @@
 #test((horizon + center).y, horizon)
 
 ---
+// Test relative length field mutability
+#{
+  let r1 = 75% + 2pt
+  let r2 = 25% + 5em
+  let r3 = 50% + 10em
+  let r4 = 60% + 19cm
+  let r5 = 0% + 9pt
+
+  r1.ratio = 55%
+  r2.length = 2cm + 3em
+  r3.ratio = 0%
+  r4.length = 0pt
+  r5.ratio = 100%
+
+  test(r1, 55% + 2pt)
+  test(r2, 25% + 2cm + 3em)
+  test(r3, 10em)
+  test(r4, 60%)
+  test(r5, 100% + 9pt)
+  test(type(r3), "relative length")
+  test(type(r4), "relative length")
+}
+
+---
 // Test length field mutability
 #{
   let l1 = 1pt
