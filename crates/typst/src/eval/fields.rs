@@ -1,7 +1,8 @@
 use ecow::{eco_format, EcoString};
 
-use crate::diag::StrResult;
+use crate::diag::{SourceResult, StrResult};
 use crate::geom::{Axes, GenAlign, PartialStroke, Stroke};
+use crate::syntax::Span;
 
 use super::{IntoValue, Value};
 
@@ -67,6 +68,16 @@ pub(crate) fn field(value: &Value, field: &str) -> StrResult<Value> {
     };
 
     Ok(result)
+}
+
+/// Attempts to change the value of a field.
+pub(crate) fn field_mut(
+    _value: &mut Value,
+    _field: &str,
+    _new_value: Value,
+    _span: Span,
+) -> SourceResult<Value> {
+    todo!();
 }
 
 /// The error message for a type not supporting field access.

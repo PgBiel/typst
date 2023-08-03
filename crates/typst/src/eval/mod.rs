@@ -68,7 +68,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use self::func::{CapturesVisitor, Closure};
 use crate::diag::{
-    bail, error, warning, At, FileError, Hint, SourceDiagnostic, SourceResult, StrResult,
+    bail, error, warning, At, FileError, SourceDiagnostic, SourceResult, StrResult,
     Trace, Tracepoint,
 };
 use crate::model::{
@@ -1073,13 +1073,26 @@ fn apply_assignment(
     let rhs = binary.rhs().eval(vm)?;
     let lhs = binary.lhs();
 
-    // An assignment to a dictionary field is different from a normal access
-    // since it can create the field instead of just modifying it.
+    // An assignment to a field is different from a normal access because:
+    // 1. For a dictionary, it can create the field instead of just modifying it.
+    // 2. For types with static fields, such as stroke, custom setters may be used
+    // instead of simple assignment to the value being modified.
     if binary.op() == ast::BinOp::Assign {
         if let ast::Expr::FieldAccess(access) = &lhs {
-            let dict = access_dict(vm, access)?;
-            dict.insert(access.field().take().into(), rhs);
-            return Ok(Value::None);
+            match access_value(vm, access)? {
+                Value::Dict(dict) => {
+                    dict.insert(access.field().take().into(), rhs);
+                    return Ok(Value::None);
+                }
+                value => {
+                    return fields::field_mut(
+                        value,
+                        access.field().as_str(),
+                        rhs,
+                        binary.span(),
+                    )
+                }
+            }
         }
     }
 
@@ -1952,16 +1965,24 @@ impl Access for ast::Parenthesized {
 
 impl Access for ast::FieldAccess {
     fn access<'a>(&self, vm: &'a mut Vm) -> SourceResult<&'a mut Value> {
-        access_dict(vm, self)?.at_mut(&self.field().take()).at(self.span())
+        match access_value(vm, self)? {
+            Value::Dict(dict) => dict.at_mut(&self.field().take()).at(self.span()),
+
+            // if not a dict, we will attempt to mutate the field using
+            // 'fields::field_mut', so just return the value itself (it is the
+            // value being mutated after all!).
+            value => Ok(value),
+        }
     }
 }
 
-fn access_dict<'a>(
+fn access_value<'a>(
     vm: &'a mut Vm,
     access: &ast::FieldAccess,
-) -> SourceResult<&'a mut Dict> {
+) -> SourceResult<&'a mut Value> {
     match access.target().access(vm)? {
-        Value::Dict(dict) => Ok(dict),
+        value @ Value::Dict(_) => Ok(value),
+        value if !fields::fields_on(value.type_name()).is_empty() => Ok(value),
         value => {
             let type_name = value.type_name();
             let span = access.target().span();
@@ -1970,14 +1991,9 @@ fn access_dict<'a>(
                 Value::Symbol(_) | Value::Content(_) | Value::Module(_) | Value::Func(_)
             ) {
                 bail!(span, "cannot mutate fields on {type_name}");
-            } else if fields::fields_on(type_name).is_empty() {
-                bail!(span, "{type_name} does not have accessible fields");
             } else {
-                // type supports static fields, which don't yet have
-                // setters
-                Err(eco_format!("fields on {type_name} are not yet mutable"))
-                    .hint(eco_format!("try creating a new {type_name} with the updated field value instead"))
-                    .at(span)
+                // fields::fields_on(type_name).is_empty() is true
+                bail!(span, "{type_name} does not have accessible fields");
             }
         }
     }
