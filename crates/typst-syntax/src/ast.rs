@@ -180,6 +180,8 @@ pub enum Expr {
     For(ForLoop),
     /// A module import: `import "utils.typ": a, b, c`.
     Import(ModuleImport),
+    /// A renamed module import (without items): `import "file.typ" as utils`
+    RenamedImport(RenamedModuleImport),
     /// A module include: `include "chapter1.typ"`.
     Include(ModuleInclude),
     /// A break from a loop: `break`.
@@ -253,6 +255,7 @@ impl AstNode for Expr {
             SyntaxKind::WhileLoop => node.cast().map(Self::While),
             SyntaxKind::ForLoop => node.cast().map(Self::For),
             SyntaxKind::ModuleImport => node.cast().map(Self::Import),
+            SyntaxKind::RenamedModuleImport => node.cast().map(Self::RenamedImport),
             SyntaxKind::ModuleInclude => node.cast().map(Self::Include),
             SyntaxKind::LoopBreak => node.cast().map(Self::Break),
             SyntaxKind::LoopContinue => node.cast().map(Self::Continue),
@@ -315,6 +318,7 @@ impl AstNode for Expr {
             Self::While(v) => v.as_untyped(),
             Self::For(v) => v.as_untyped(),
             Self::Import(v) => v.as_untyped(),
+            Self::RenamedImport(v) => v.as_untyped(),
             Self::Include(v) => v.as_untyped(),
             Self::Break(v) => v.as_untyped(),
             Self::Continue(v) => v.as_untyped(),
@@ -1988,6 +1992,24 @@ impl ModuleImport {
             }
             _ => Option::None,
         })
+    }
+}
+
+node! {
+    /// A renamed module import (without items): `import "file.typ" as utils`
+    RenamedModuleImport
+}
+
+impl RenamedModuleImport {
+    /// The module or path from which the items should be imported under the
+    /// desired name.
+    pub fn source(&self) -> Expr {
+        self.0.cast_first_match().unwrap_or_default()
+    }
+
+    /// The name to save the module's items under.
+    pub fn new_name(&self) -> Ident {
+        self.0.cast_last_match().unwrap_or_default()
     }
 }
 
