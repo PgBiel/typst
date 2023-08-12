@@ -1710,14 +1710,15 @@ fn apply_imports<V: IntoValue>(
                 vm.scopes.top.define(var.clone(), value.clone());
             }
         }
-        Some(ast::Imports::Items(idents)) => {
+        Some(ast::Imports::Items(items)) => {
             let mut errors = vec![];
             let scope = scope(&source_value);
-            for ident in idents {
-                if let Some(value) = scope.get(&ident) {
-                    vm.define(ident, value.clone());
+            for item in items {
+                let original_ident = item.original_name();
+                if let Some(value) = scope.get(&original_ident) {
+                    vm.define(item.bound_name(), value.clone());
                 } else {
-                    errors.push(error!(ident.span(), "unresolved import"));
+                    errors.push(error!(original_ident.span(), "unresolved import"));
                 }
             }
             if !errors.is_empty() {

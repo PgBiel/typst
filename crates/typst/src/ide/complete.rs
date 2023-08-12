@@ -477,7 +477,7 @@ fn complete_imports(ctx: &mut CompletionContext) -> bool {
 /// Add completions for all exports of a module.
 fn import_item_completions(
     ctx: &mut CompletionContext,
-    existing: &[ast::Ident],
+    existing: &[ast::ImportItem],
     value: &Value,
 ) {
     let module = match value {
@@ -494,7 +494,7 @@ fn import_item_completions(
     }
 
     for (name, value) in module.scope().iter() {
-        if existing.iter().all(|ident| ident.as_str() != name) {
+        if existing.iter().all(|item| item.original_name().as_str() != name) {
             ctx.value_completion(Some(name.clone()), value, false, None);
         }
     }
