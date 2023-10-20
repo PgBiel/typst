@@ -159,6 +159,12 @@ pub struct ScaleElem {
     #[default(HAlign::Center + VAlign::Horizon)]
     pub origin: Align,
 
+    /// If the scale should be purely visual, and thus not affect the document
+    /// layout (the element's actual size is unchanged). If set to true, there
+    /// can be overlaps between the scaled element and elements around it.
+    #[default(false)]
+    pub visual: bool,
+
     /// The content to scale.
     #[required]
     pub body: Content,
@@ -173,15 +179,32 @@ impl Layout for ScaleElem {
         regions: Regions,
     ) -> SourceResult<Fragment> {
         let pod = Regions::one(regions.base(), Axes::splat(false));
+        let (x_scale, y_scale) = (self.x(styles), self.y(styles));
         let mut frame = self.body().layout(vt, styles, pod)?.into_frame();
         let Axes { x, y } = self
             .origin(styles)
             .resolve(styles)
             .zip_map(frame.size(), FixedAlign::position);
         let transform = Transform::translate(x, y)
-            .pre_concat(Transform::scale(self.x(styles), self.y(styles)))
+            .pre_concat(Transform::scale(x_scale, y_scale))
             .pre_concat(Transform::translate(-x, -y));
         frame.transform(transform);
+
+        // Resize frame to account for the new size.
+        if !self.visual(styles) {
+            let Axes { x: width, y: height } = frame.size();
+
+            // Frame resize goes towards bottom + right, so we have to readjust
+            // the frame content's position to account for the scale's
+            // alignment.
+            let translate = Transform::translate(-x, -y);
+            frame.transform(translate);
+            frame.set_size(Size {
+                x: width * x_scale.get(),
+                y: height * y_scale.get(),
+            });
+        }
+
         Ok(Fragment::frame(frame))
     }
 }
