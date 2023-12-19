@@ -5,10 +5,10 @@ use smallvec::{smallvec, SmallVec};
 use crate::diag::{SourceResult, StrResult};
 use crate::engine::Engine;
 use crate::foundations::{
-    cast, elem, Array, Content, NativeElement, Smart, StyleChain, Value,
+    cast, elem, Array, Content, NativeElement, Smart, StyleChain, Value, Show,
 };
 use crate::layout::{
-    Abs, Align, AlignElem, Axes, Celled, Fragment, GridLayouter, Layout, Length, Regions,
+    Abs, Align, AlignElem, Axes, Cell, Celled, CellGrid, Fragment, GridLayouter, Layout, Length, Regions,
     Rel, Sides, Sizing,
 };
 use crate::visualize::{Paint, Stroke};
@@ -195,7 +195,7 @@ pub struct GridElem {
     ///
     /// The cells are populated in row-major order.
     #[variadic]
-    pub children: Vec<Content>,
+    pub children: Vec<GridCell>,
 }
 
 impl Layout for GridElem {
@@ -214,17 +214,21 @@ impl Layout for GridElem {
         let row_gutter = self.row_gutter(styles);
         let fill = self.fill(styles);
         let stroke = self.stroke(styles).map(Stroke::unwrap_or_default);
+        let mut children = self.children();
 
         let tracks = Axes::new(columns.0.as_slice(), rows.0.as_slice());
         let gutter = Axes::new(column_gutter.0.as_slice(), row_gutter.0.as_slice());
-        let cells =
-            apply_align_inset_to_cells(engine, &tracks, &self.children, align, inset)?;
+
+        // Build the grid.
+        let grid = CellGrid::new(tracks, gutter, &mut children, styles);
+
+        // Resolve cells' fields based on their positions.
+        // This way, their properties in show rules will already be final.
+        grid.resolve_cells(engine, fill, align, &inset, styles);
 
         // Prepare grid layout by unifying content and gutter tracks.
         let layouter = GridLayouter::new(
-            tracks,
-            gutter,
-            &cells,
+            grid,
             fill,
             &stroke,
             regions,
@@ -237,29 +241,69 @@ impl Layout for GridElem {
     }
 }
 
-pub fn apply_align_inset_to_cells(
-    engine: &mut Engine,
-    tracks: &Axes<&[Sizing]>,
-    cells: &[Content],
-    align: &Celled<Smart<Align>>,
-    inset: Sides<Rel<Length>>,
-) -> SourceResult<Vec<Content>> {
-    let cols = tracks.x.len().max(1);
-    cells
-        .iter()
-        .enumerate()
-        .map(|(i, child)| {
-            let mut child = child.clone().padded(inset);
+/// A cell in the grid.
+#[elem(Show, Layout)]
+pub struct GridCell {
+    /// The cell's body.
+    #[required]
+    body: Content,
 
-            let x = i % cols;
-            let y = i / cols;
-            if let Smart::Custom(alignment) = align.resolve(engine, x, y)? {
-                child = child.styled(AlignElem::set_alignment(alignment));
-            }
+    /// The cell's fill override.
+    fill: Smart<Option<Paint>>,
 
-            Ok(child)
-        })
-        .collect()
+    /// The cell's alignment override.
+    align: Smart<Align>,
+
+    /// The cell's inset override.
+    inset: Smart<Sides<Option<Rel<Length>>>>,
+}
+
+cast! {
+    GridCell,
+    v: Content => v.into(),
+}
+
+impl Cell for GridCell {
+    fn fill(&self, styles: StyleChain) -> Smart<Option<Paint>> {
+        self.fill(styles)
+    }
+
+    fn resolve_cell(&mut self, x: usize, y: usize, fill: &Option<Paint>, align: &Smart<Align>, inset: &Sides<Rel<Length>>, styles: StyleChain) {
+        // FIXME: ugly
+        *self = self.with_fill(Smart::Custom(self.fill(styles).unwrap_or_else(|| fill.clone())))
+            .with_align(self.align(styles).as_custom().or_else(|| align.clone().as_custom()).map(Smart::Custom).unwrap_or(Smart::Auto))
+            .with_inset(Smart::Custom(self.inset(styles).unwrap_or_else(|| inset.clone().map(|side| Some(side)))));
+    }
+}
+
+impl From<Content> for GridCell {
+    fn from(value: Content) -> Self {
+        value.to::<Self>().cloned().unwrap_or_else(|| Self::new(value.clone()))
+    }
+}
+
+impl Show for GridCell {
+    fn show(&self, engine: &mut Engine, styles: StyleChain) -> SourceResult<Content> {
+        let mut body = self.body().clone();
+        if let Smart::Custom(inset) = self.inset(styles) {
+            body = body.padded(inset.map(Option::unwrap_or_default));
+        }
+        if let Smart::Custom(alignment) = self.align(styles) {
+            body = body.styled(AlignElem::set_alignment(alignment));
+        }
+        Ok(body)
+    }
+}
+
+impl Layout for GridCell {
+    fn layout(
+        &self,
+        engine: &mut Engine,
+        styles: StyleChain,
+        regions: Regions,
+    ) -> SourceResult<Fragment> {
+        self.show(engine, styles)?.layout(engine, styles, regions)
+    }
 }
 
 /// Track sizing definitions.

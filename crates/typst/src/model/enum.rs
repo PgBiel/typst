@@ -7,7 +7,7 @@ use crate::foundations::{
 };
 use crate::layout::{
     Align, Axes, BlockElem, Celled, Em, Fragment, GridLayouter, HAlign, Layout, Length,
-    Regions, Sizing, Spacing, VAlign,
+    Regions, Sizing, Spacing, VAlign, CellGrid,
 };
 use crate::model::{Numbering, NumberingPattern, ParElem};
 use crate::text::TextElem;
@@ -266,17 +266,19 @@ impl Layout for EnumElem {
             number = number.saturating_add(1);
         }
 
+        let tracks: Axes<&[Sizing]> = Axes::with_x(&[
+            Sizing::Rel(indent.into()),
+            Sizing::Auto,
+            Sizing::Rel(body_indent.into()),
+            Sizing::Auto,
+        ]);
+        let gutter: Axes<&[Sizing]> = Axes::with_y(&[gutter.into()]);
+
+        let grid = CellGrid::new(tracks, gutter, &mut cells, styles);
         let fill = Celled::Value(None);
         let stroke = None;
         let layouter = GridLayouter::new(
-            Axes::with_x(&[
-                Sizing::Rel(indent.into()),
-                Sizing::Auto,
-                Sizing::Rel(body_indent.into()),
-                Sizing::Auto,
-            ]),
-            Axes::with_y(&[gutter.into()]),
-            &cells,
+            grid,
             &fill,
             &stroke,
             regions,

@@ -234,8 +234,8 @@ impl Show for BibliographyElem {
             if references.iter().any(|(prefix, _)| prefix.is_some()) {
                 let mut cells = vec![];
                 for (prefix, reference) in references {
-                    cells.push(prefix.clone().unwrap_or_default());
-                    cells.push(reference.clone());
+                    cells.push(prefix.clone().unwrap_or_default().into());
+                    cells.push(reference.clone().into());
                 }
 
                 seq.push(VElem::new(row_gutter).with_weakness(3).pack());
@@ -939,7 +939,7 @@ impl ElemRenderer<'_> {
 
         if let Some(prefix) = suf_prefix {
             const COLUMN_GUTTER: Em = Em::new(0.65);
-            content = GridElem::new(vec![prefix, content])
+            content = GridElem::new(vec![prefix.into(), content.into()])
                 .with_columns(TrackSizings(smallvec![Sizing::Auto; 2]))
                 .with_column_gutter(TrackSizings(smallvec![COLUMN_GUTTER.into()]))
                 .pack();

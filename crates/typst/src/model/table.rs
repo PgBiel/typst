@@ -1,9 +1,9 @@
 use crate::diag::SourceResult;
 use crate::engine::Engine;
-use crate::foundations::{elem, Content, NativeElement, Smart, StyleChain};
+use crate::foundations::{cast, elem, Content, NativeElement, Smart, StyleChain, Show};
 use crate::layout::{
-    apply_align_inset_to_cells, Abs, Align, Axes, Celled, Fragment, GridLayouter, Layout,
-    Length, Regions, Rel, Sides, TrackSizings,
+    Abs, Align, Axes, Celled, Fragment, GridLayouter, Layout,
+    Length, Regions, Rel, Sides, TrackSizings, CellGrid, Cell, AlignElem,
 };
 use crate::model::Figurable;
 use crate::text::{Lang, LocalName, Region};
@@ -149,7 +149,7 @@ pub struct TableElem {
 
     /// The contents of the table cells.
     #[variadic]
-    pub children: Vec<Content>,
+    pub children: Vec<TableCell>,
 }
 
 impl Layout for TableElem {
@@ -168,17 +168,20 @@ impl Layout for TableElem {
         let row_gutter = self.row_gutter(styles);
         let fill = self.fill(styles);
         let stroke = self.stroke(styles).map(Stroke::unwrap_or_default);
+        let mut children = self.children;
 
         let tracks = Axes::new(columns.0.as_slice(), rows.0.as_slice());
         let gutter = Axes::new(column_gutter.0.as_slice(), row_gutter.0.as_slice());
-        let cells =
-            apply_align_inset_to_cells(engine, &tracks, self.children(), align, inset)?;
+        // Build the grid.
+        let grid = CellGrid::new(tracks, gutter, &mut children, styles);
+
+        // Resolve cells' fields based on their positions.
+        // This way, their properties in show rules will already be final.
+        grid.resolve_cells(engine, fill, align, &inset, styles);
 
         // Prepare grid layout by unifying content and gutter tracks.
         let layouter = GridLayouter::new(
-            tracks,
-            gutter,
-            &cells,
+            grid,
             fill,
             &stroke,
             regions,
@@ -226,3 +229,68 @@ impl LocalName for TableElem {
 }
 
 impl Figurable for TableElem {}
+
+/// A cell in the table.
+#[elem(Show, Layout)]
+pub struct TableCell {
+    /// The cell's body.
+    #[required]
+    body: Content,
+
+    /// The cell's fill override.
+    fill: Smart<Option<Paint>>,
+
+    /// The cell's alignment override.
+    align: Smart<Align>,
+
+    /// The cell's inset override.
+    inset: Smart<Sides<Option<Rel<Length>>>>,
+}
+
+cast! {
+    TableCell,
+    v: Content => v.into(),
+}
+
+impl Cell for TableCell {
+    fn fill(&self, styles: StyleChain) -> Smart<Option<Paint>> {
+        self.fill(styles)
+    }
+
+    fn resolve_cell(&mut self, x: usize, y: usize, fill: &Option<Paint>, align: &Smart<Align>, inset: &Sides<Rel<Length>>, styles: StyleChain) {
+        // FIXME: ugly
+        *self = self.with_fill(Smart::Custom(self.fill(styles).unwrap_or_else(|| fill.clone())))
+            .with_align(self.align(styles).as_custom().or_else(|| align.clone().as_custom()).map(Smart::Custom).unwrap_or(Smart::Auto))
+            .with_inset(Smart::Custom(self.inset(styles).unwrap_or_else(|| inset.clone().map(|side| Some(side)))));
+    }
+}
+
+impl From<Content> for TableCell {
+    fn from(value: Content) -> Self {
+        value.to::<Self>().cloned().unwrap_or_else(|| Self::new(value.clone()))
+    }
+}
+
+impl Show for TableCell {
+    fn show(&self, engine: &mut Engine, styles: StyleChain) -> SourceResult<Content> {
+        let mut body = self.body().clone();
+        if let Smart::Custom(inset) = self.inset(styles) {
+            body = body.padded(inset.map(Option::unwrap_or_default));
+        }
+        if let Smart::Custom(alignment) = self.align(styles) {
+            body = body.styled(AlignElem::set_alignment(alignment));
+        }
+        Ok(body)
+    }
+}
+
+impl Layout for TableCell {
+    fn layout(
+        &self,
+        engine: &mut Engine,
+        styles: StyleChain,
+        regions: Regions,
+    ) -> SourceResult<Fragment> {
+        self.show(engine, styles)?.layout(engine, styles, regions)
+    }
+}

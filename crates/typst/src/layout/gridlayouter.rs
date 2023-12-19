@@ -1,12 +1,12 @@
 use crate::diag::{bail, At, SourceResult, StrResult};
 use crate::engine::Engine;
 use crate::foundations::{
-    Array, CastInfo, Content, FromValue, Func, IntoValue, Reflect, Resolve, Smart,
-    StyleChain, Value,
+    Array, CastInfo, Content, FromValue, Func, IntoValue, Reflect, Resolve, StyleChain,
+    Value, Smart,
 };
 use crate::layout::{
-    Abs, Axes, Dir, Fr, Fragment, Frame, FrameItem, Layout, Length, Point, Regions, Rel,
-    Size, Sizing,
+    Abs, Align, Axes, Dir, Fr, Fragment, Frame, FrameItem, Layout, Length, Point, Regions, Rel,
+    Sides, Size, Sizing,
 };
 use crate::syntax::Span;
 use crate::text::TextElem;
@@ -84,98 +84,39 @@ impl<T: FromValue> FromValue for Celled<T> {
 
 /// For any elements which can be used as cells in the GridLayouter.
 pub trait Cell: Layout {
-    /// The cell's fill override, or 'auto' to use the table's default.
-    fn fill(&self, styles: &StyleChain) -> Smart<Option<Paint>>;
+    /// Returns the cell's fill.
+    fn fill(&self, styles: StyleChain) -> Smart<Option<Paint>>;
+
+    /// Resolves the cell's fields, given its coordinates and default grid-wide fill, align and inset properties.
+    fn resolve_cell(&mut self, x: usize, y: usize, fill: &Option<Paint>, align: &Smart<Align>, inset: &Sides<Rel<Length>>, styles: StyleChain);
 }
 
 // Content can work as a simple grid cell, without any overrides.
 impl Cell for Content {
-    fn fill(&self, _styles: &StyleChain) -> Smart<Option<Paint>> {
+    fn fill(&self, _styles: StyleChain) -> Smart<Option<Paint>> {
         Smart::Auto
     }
+
+    fn resolve_cell(&mut self, _x: usize, _y: usize, _fill: &Option<Paint>, _align: &Smart<Align>, _inset: &Sides<Rel<Length>>, _styles: StyleChain) {}
 }
 
-/// Performs grid layout.
-pub struct GridLayouter<'a, T: Cell = Content> {
-    /// The grid cells.
-    cells: &'a [T],
-    /// Whether this is an RTL grid.
-    is_rtl: bool,
-    /// Whether this grid has gutters.
-    has_gutter: bool,
-    /// The column tracks including gutter tracks.
+/// A grid of cells, including the columns, rows,
+/// and cell data.
+pub struct CellGrid<'a> {
     cols: Vec<Sizing>,
-    /// The row tracks including gutter tracks.
     rows: Vec<Sizing>,
-    // How to fill the cells.
-    #[allow(dead_code)]
-    fill: &'a Celled<Option<Paint>>,
-    // How to stroke the cells.
-    #[allow(dead_code)]
-    stroke: &'a Option<FixedStroke>,
-    /// The regions to layout children into.
-    regions: Regions<'a>,
-    /// The inherited styles.
-    styles: StyleChain<'a>,
-    /// Resolved column sizes.
-    rcols: Vec<Abs>,
-    /// The sum of `rcols`.
-    width: Abs,
-    /// Resolve row sizes, by region.
-    rrows: Vec<Vec<RowPiece>>,
-    /// Rows in the current region.
-    lrows: Vec<Row>,
-    /// The initial size of the current region before we started subtracting.
-    initial: Size,
-    /// Frames for finished regions.
-    finished: Vec<Frame>,
-    /// The span of the grid element.
-    span: Span,
+    cells: Vec<&'a mut dyn Cell>,
+    has_gutter: bool,
+    is_rtl: bool,
 }
 
-/// The resulting sizes of columns and rows in a grid.
-#[derive(Debug)]
-pub struct GridLayout {
-    /// The fragment.
-    pub fragment: Fragment,
-    /// The column widths.
-    pub cols: Vec<Abs>,
-    /// The heights of the resulting rows segments, by region.
-    pub rows: Vec<Vec<RowPiece>>,
-}
-
-/// Details about a resulting row piece.
-#[derive(Debug)]
-pub struct RowPiece {
-    /// The height of the segment.
-    pub height: Abs,
-    /// The index of the row.
-    pub y: usize,
-}
-
-/// Produced by initial row layout, auto and relative rows are already finished,
-/// fractional rows not yet.
-enum Row {
-    /// Finished row frame of auto or relative row with y index.
-    Frame(Frame, usize),
-    /// Fractional row with y index.
-    Fr(Fr, usize),
-}
-
-impl<'a, T: Cell> GridLayouter<'a, T> {
-    /// Create a new grid layouter.
-    ///
-    /// This prepares grid layout by unifying content and gutter tracks.
-    #[allow(clippy::too_many_arguments)]
+impl<'a> CellGrid<'a> {
+    /// Generates the cell grid, given the tracks and resolved cells.
     pub fn new(
         tracks: Axes<&[Sizing]>,
         gutter: Axes<&[Sizing]>,
-        cells: &'a [T],
-        fill: &'a Celled<Option<Paint>>,
-        stroke: &'a Option<FixedStroke>,
-        regions: Regions<'a>,
-        styles: StyleChain<'a>,
-        span: Span,
+        cells: &'a mut [impl Cell],
+        styles: StyleChain,
     ) -> Self {
         let mut cols = vec![];
         let mut rows = vec![];
@@ -227,6 +168,110 @@ impl<'a, T: Cell> GridLayouter<'a, T> {
             cols.reverse();
         }
 
+        let cells = cells.iter_mut().map(|cell| cell as &mut dyn Cell).collect();
+
+        Self {
+            cols,
+            rows,
+            cells,
+            has_gutter,
+            is_rtl,
+        }
+    }
+
+    /// Resolves all cells in the grid. Allows them to keep track of their final properties.
+    pub fn resolve_cells(&self, engine: &mut Engine, fill: &Celled<Option<Paint>>, align: &Celled<Smart<Align>>, inset: &Sides<Rel<Length>>, styles: StyleChain) -> SourceResult<()> {
+        let c = self.cols.len();
+        for (i, cell) in self.cells.iter().enumerate() {
+            let x = i % c;
+            let y = i / c;
+            cell.resolve_cell(x, y, &fill.resolve(engine, x, y)?, &align.resolve(engine, x, y)?, inset, styles);
+        }
+
+        Ok(())
+    }
+}
+
+/// Performs grid layout.
+pub struct GridLayouter<'a> {
+    /// The grid cells.
+    cells: Vec<&'a mut dyn Cell>,
+    /// Whether this is an RTL grid.
+    is_rtl: bool,
+    /// Whether this grid has gutters.
+    has_gutter: bool,
+    /// The column tracks including gutter tracks.
+    cols: Vec<Sizing>,
+    /// The row tracks including gutter tracks.
+    rows: Vec<Sizing>,
+    // How to fill the cells.
+    fill: &'a Celled<Option<Paint>>,
+    // How to stroke the cells.
+    stroke: &'a Option<FixedStroke>,
+    /// The regions to layout children into.
+    regions: Regions<'a>,
+    /// The inherited styles.
+    styles: StyleChain<'a>,
+    /// Resolved column sizes.
+    rcols: Vec<Abs>,
+    /// The sum of `rcols`.
+    width: Abs,
+    /// Resolve row sizes, by region.
+    rrows: Vec<Vec<RowPiece>>,
+    /// Rows in the current region.
+    lrows: Vec<Row>,
+    /// The initial size of the current region before we started subtracting.
+    initial: Size,
+    /// Frames for finished regions.
+    finished: Vec<Frame>,
+    /// The span of the grid element.
+    span: Span,
+}
+
+/// The resulting sizes of columns and rows in a grid.
+#[derive(Debug)]
+pub struct GridLayout {
+    /// The fragment.
+    pub fragment: Fragment,
+    /// The column widths.
+    pub cols: Vec<Abs>,
+    /// The heights of the resulting rows segments, by region.
+    pub rows: Vec<Vec<RowPiece>>,
+}
+
+/// Details about a resulting row piece.
+#[derive(Debug)]
+pub struct RowPiece {
+    /// The height of the segment.
+    pub height: Abs,
+    /// The index of the row.
+    pub y: usize,
+}
+
+/// Produced by initial row layout, auto and relative rows are already finished,
+/// fractional rows not yet.
+enum Row {
+    /// Finished row frame of auto or relative row with y index.
+    Frame(Frame, usize),
+    /// Fractional row with y index.
+    Fr(Fr, usize),
+}
+
+impl<'a> GridLayouter<'a> {
+    /// Create a new grid layouter.
+    ///
+    /// This prepares grid layout by unifying content and gutter tracks.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        grid: CellGrid<'a>,
+        fill: &'a Celled<Option<Paint>>,
+        stroke: &'a Option<FixedStroke>,
+        regions: Regions<'a>,
+        styles: StyleChain<'a>,
+        span: Span,
+    ) -> Self {
+        let CellGrid { cols, rows, cells, has_gutter, is_rtl } = grid;
+
         // We use these regions for auto row measurement. Since at that moment,
         // columns are already sized, we can enable horizontal expansion.
         let mut regions = regions;
@@ -272,9 +317,7 @@ impl<'a, T: Cell> GridLayouter<'a, T> {
 
         self.finish_region(engine)?;
 
-        if self.stroke.is_some() || !matches!(self.fill, Celled::Value(None)) {
-            self.render_fills_strokes(engine)?;
-        }
+        self.render_fills_strokes(engine)?;
 
         Ok(GridLayout {
             fragment: Fragment::frames(self.finished),
@@ -320,8 +363,14 @@ impl<'a, T: Cell> GridLayouter<'a, T> {
             let mut dx = Abs::zero();
             for (x, &col) in self.rcols.iter().enumerate() {
                 let mut dy = Abs::zero();
-                for row in rows {
-                    if let Some(fill) = self.fill.resolve(engine, x, row.y)? {
+                for (y, row) in rows.iter().enumerate() {
+                    let fill = self.cell(x, y)
+                        .map(|cell| cell.fill(self.styles))
+                        .and_then(|fill| fill.as_custom())
+                        .map(Ok)
+                        .unwrap_or_else(|| self.fill.resolve(engine, x, y))?;
+
+                    if let Some(fill) = fill {
                         let pos = Point::new(dx, dy);
                         let size = Size::new(col, row.height);
                         let rect = Geometry::Rect(size).filled(fill);
@@ -718,7 +767,7 @@ impl<'a, T: Cell> GridLayouter<'a, T> {
     ///
     /// Returns `None` if it's a gutter cell.
     #[track_caller]
-    fn cell(&self, mut x: usize, y: usize) -> Option<&'a T> {
+    fn cell(&self, mut x: usize, y: usize) -> Option<&&'a mut dyn Cell> {
         assert!(x < self.cols.len());
         assert!(y < self.rows.len());
 
