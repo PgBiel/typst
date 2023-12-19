@@ -178,7 +178,7 @@ impl Layout for TableElem {
         let layouter = GridLayouter::new(
             tracks,
             gutter,
-            &cells,
+            cells,
             fill,
             &stroke,
             regions,

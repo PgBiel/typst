@@ -86,6 +86,9 @@ impl<T: FromValue> FromValue for Celled<T> {
 pub trait Cell: Layout {
     /// The cell's fill override, or 'auto' to use the table's default.
     fn fill(&self, styles: &StyleChain) -> Smart<Option<Paint>>;
+
+    /// Provides the cell's own coordinates, if it needs that information.
+    fn set_coords(&mut self, x: usize, y: usize);
 }
 
 // Content can work as a simple grid cell, without any overrides.
@@ -93,12 +96,14 @@ impl Cell for Content {
     fn fill(&self, _styles: &StyleChain) -> Smart<Option<Paint>> {
         Smart::Auto
     }
+
+    fn set_coords(&mut self, _x: usize, _y: usize) {}
 }
 
 /// Performs grid layout.
 pub struct GridLayouter<'a, T: Cell = Content> {
     /// The grid cells.
-    cells: &'a [T],
+    cells: Vec<T>,
     /// Whether this is an RTL grid.
     is_rtl: bool,
     /// Whether this grid has gutters.
@@ -170,7 +175,7 @@ impl<'a, T: Cell> GridLayouter<'a, T> {
     pub fn new(
         tracks: Axes<&[Sizing]>,
         gutter: Axes<&[Sizing]>,
-        cells: &'a [T],
+        mut cells: Vec<T>,
         fill: &'a Celled<Option<Paint>>,
         stroke: &'a Option<FixedStroke>,
         regions: Regions<'a>,
@@ -225,6 +230,18 @@ impl<'a, T: Cell> GridLayouter<'a, T> {
         let is_rtl = TextElem::dir_in(styles) == Dir::RTL;
         if is_rtl {
             cols.reverse();
+        }
+
+        {
+            let c = cols.len();
+            cells.iter_mut().enumerate().for_each(|(i, cell)| {
+                let y = i / c;
+                let x = i % c;
+
+                // Ensure cells are aware of their own coordinates.
+                // Useful for show rules and the sort.
+                cell.set_coords(x, y);
+            });
         }
 
         // We use these regions for auto row measurement. Since at that moment,
@@ -718,7 +735,7 @@ impl<'a, T: Cell> GridLayouter<'a, T> {
     ///
     /// Returns `None` if it's a gutter cell.
     #[track_caller]
-    fn cell(&self, mut x: usize, y: usize) -> Option<&'a T> {
+    fn cell(&self, mut x: usize, y: usize) -> Option<&T> {
         assert!(x < self.cols.len());
         assert!(y < self.rows.len());
 

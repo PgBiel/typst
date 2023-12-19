@@ -224,7 +224,7 @@ impl Layout for GridElem {
         let layouter = GridLayouter::new(
             tracks,
             gutter,
-            &cells,
+            cells,
             fill,
             &stroke,
             regions,

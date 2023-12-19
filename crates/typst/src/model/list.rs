@@ -176,7 +176,7 @@ impl Layout for ListElem {
                 Sizing::Auto,
             ]),
             Axes::with_y(&[gutter.into()]),
-            &cells,
+            cells,
             &fill,
             &stroke,
             regions,

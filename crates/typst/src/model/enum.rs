@@ -276,7 +276,7 @@ impl Layout for EnumElem {
                 Sizing::Auto,
             ]),
             Axes::with_y(&[gutter.into()]),
-            &cells,
+            cells,
             &fill,
             &stroke,
             regions,
