@@ -325,6 +325,18 @@ impl ResolvableCell for TableCell {
         self.push_align(self.align(styles).or(align));
         self.push_inset(self.inset(styles).or_else(|| Smart::Custom(inset.map(Some))));
     }
+
+    fn new_empty_cell() -> Self {
+        Self::new(Content::default())
+    }
+
+    fn x(&self, styles: StyleChain) -> Smart<usize> {
+        self.x(styles)
+    }
+
+    fn y(&self, styles: StyleChain) -> Smart<usize> {
+        self.y(styles)
+    }
 }
 
 impl Show for TableCell {
