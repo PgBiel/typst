@@ -214,19 +214,22 @@ impl<T: Cell> CellGrid<T> {
 }
 
 impl<T: Cell + ResolvableCell> CellGrid<T> {
-    /// Resolves all cells in the grid. Allows them to keep track of their
-    /// final properties and adjust their fields accordingly.
-    pub fn resolve_cells(
-        mut self,
-        engine: &mut Engine,
+    /// Resolves all cells in the grid before creating it.
+    /// Allows them to keep track of their final properties and adjust their fields accordingly.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_resolve(
+        tracks: Axes<&[Sizing]>,
+        gutter: Axes<&[Sizing]>,
+        mut cells: Vec<T>,
         fill: &Celled<Option<Paint>>,
         align: &Celled<Smart<Align>>,
         inset: Sides<Rel<Length>>,
+        engine: &mut Engine,
         styles: StyleChain,
     ) -> SourceResult<Self> {
-        let c = if self.has_gutter { 1 + self.cols.len() / 2 } else { self.cols.len() };
+        let c = tracks.x.len().max(1);
 
-        for (i, cell) in self.cells.iter_mut().enumerate() {
+        for (i, cell) in cells.iter_mut().enumerate() {
             let x = i % c;
             let y = i / c;
             cell.resolve_cell(
@@ -239,7 +242,7 @@ impl<T: Cell + ResolvableCell> CellGrid<T> {
             );
         }
 
-        Ok(self)
+        Ok(Self::new(tracks, gutter, cells, styles))
     }
 }
 
