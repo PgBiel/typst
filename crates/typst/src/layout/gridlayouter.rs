@@ -119,6 +119,56 @@ impl Cell for Content {
     }
 }
 
+/// Represents an entry in the cell grid.
+pub enum GridEntry<T: Cell> {
+    /// A grid position which holds a cell.
+    Cell(T),
+
+    /// A grid position which does not hold a cell yet.
+    /// This will be used to extend the grid when arbitrarily placing cells
+    /// after all others. Cells can occupy this position later.
+    /// If not replaced, this shall become a cell with empty content.
+    Absent,
+}
+
+impl<T: Cell> GridEntry<T> {
+    /// If this is a cell, returns `Some(cell)`.
+    /// Otherwise, returns `None`.
+    fn as_cell(&self) -> Option<&T> {
+        match self {
+            Self::Cell(cell) => Some(cell),
+            _ => None,
+        }
+    }
+
+    /// Returns 'true' if this is an absent entry.
+    /// Returns 'false' otherwise.
+    fn is_absent(&self) -> bool {
+        matches!(self, Self::Absent)
+    }
+}
+
+impl<T: Cell> Cell for GridEntry<T> {
+    fn fill(&self, styles: StyleChain) -> Option<Paint> {
+        // Any absent cells should have been resolved by the CellGrid at this
+        // point, hence we can safely call 'unwrap()'.
+        self.as_cell().unwrap().fill(styles)
+    }
+}
+
+impl<T: Cell> Layout for GridEntry<T> {
+    fn layout(
+        &self,
+        engine: &mut Engine,
+        styles: StyleChain,
+        regions: Regions,
+    ) -> SourceResult<Fragment> {
+        // Any absent cells should have been resolved by the CellGrid at this
+        // point, hence we can safely call 'unwrap()'.
+        self.as_cell().unwrap().layout(engine, styles, regions)
+    }
+}
+
 /// A grid of cells, including the columns, rows, and cell data.
 pub struct CellGrid<T: Cell = Content> {
     /// The grid cells.
