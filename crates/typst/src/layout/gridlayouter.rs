@@ -295,7 +295,7 @@ impl<T: Cell + ResolvableCell> CellGrid<T> {
         // in arbitrary positions and thus cause the grid to expand.
         // We have to rebuild the grid to account for arbitrary positions.
         let cell_count = cells.len();
-        let mut new_cells = Vec::with_capacity(cell_count);
+        let mut new_cells: Vec<GridEntry<T>> = Vec::with_capacity(cell_count);
         for (i, mut cell) in cells.into_iter().enumerate() {
             let x = i % c;
             let y = i / c;
@@ -317,34 +317,35 @@ impl<T: Cell + ResolvableCell> CellGrid<T> {
                 styles,
             );
 
-            // Now let's check if 'new_i' is valid.
-            if new_i == new_cells.len() {
+            // Now let's check if the cell's position is valid.
+            if let Some(current_cell) = new_cells.get_mut(new_i) {
+                // We are trying to position a cell in a previous position.
+                // Ensure we aren't trying to place a cell where there is
+                // already one.
+                if !current_cell.is_absent() {
+                    bail!(
+                        span,
+                        "Attempted to place two different cells at column {new_x}, row {new_y}."
+                    );
+                }
+
+                // Ok, position is available, so let's place the cell here.
+                *current_cell = GridEntry::Cell(cell);
+            } else if new_i == new_cells.len() {
                 // We can just place the new cell at the end of the grid vector.
                 // No other cell can be there.
                 new_cells.push(GridEntry::Cell(cell));
-                continue;
-            } else if new_i > new_cells.len() {
-                // The cell wants to be placed in a position which doesn't
-                // exist yet in the grid.
+            } else {
+                // Here, new_i > new_cells.len(). Thus, the cell wants to be
+                // placed in a position which doesn't exist yet in the grid.
                 // We will add enough absent positions for this to be possible.
-                let new_position_count = (new_i + 1) - new_cells.len();
+                let new_position_count = new_i - new_cells.len();
                 new_cells.extend(
-                    std::iter::repeat_with(|| GridEntry::Absent).take(new_position_count),
+                    std::iter::repeat_with(|| GridEntry::Absent)
+                        .take(new_position_count)
+                        .chain(std::iter::once(GridEntry::Cell(cell))),
                 );
             }
-
-            // Ensure we aren't trying to place a cell where there is already one.
-            // This unwrap shouldn't panic, as we should have extended the vector enough above.
-            let current_cell = new_cells.get_mut(new_i).unwrap();
-            if !current_cell.is_absent() {
-                bail!(
-                    span,
-                    "Attempted to place two different cells at column {new_x}, row {new_y}."
-                );
-            }
-
-            // Finally, place the cell in the grid!
-            *current_cell = GridEntry::Cell(cell);
         }
 
         // Replace absent entries by resolved empty cells (final step).
