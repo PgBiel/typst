@@ -301,6 +301,12 @@ pub struct GridCell {
     #[required]
     body: Content,
 
+    /// The cell's column (zero-indexed).
+    x: Smart<usize>,
+
+    /// The cell's row (zero-indexed).
+    y: Smart<usize>,
+
     /// The cell's fill override.
     fill: Smart<Option<Paint>>,
 
@@ -326,13 +332,15 @@ impl Cell for GridCell {
 impl ResolvableCell for GridCell {
     fn resolve_cell(
         &mut self,
-        _x: usize,
-        _y: usize,
+        x: usize,
+        y: usize,
         fill: &Option<Paint>,
         align: Smart<Align>,
         inset: Sides<Rel<Length>>,
         styles: StyleChain,
     ) {
+        self.push_x(self.x(styles).or(Smart::Custom(x)));
+        self.push_y(self.y(styles).or(Smart::Custom(y)));
         self.push_fill(self.fill(styles).or_else(|| Smart::Custom(fill.clone())));
         self.push_align(self.align(styles).or(align));
         self.push_inset(self.inset(styles).or_else(|| Smart::Custom(inset.map(Some))));
