@@ -338,6 +338,14 @@ impl ResolvableCell for GridCell {
     fn new_empty_cell() -> Self {
         Self::new(Content::default())
     }
+
+    fn x(&self, styles: StyleChain) -> Smart<usize> {
+        self.x(styles)
+    }
+
+    fn y(&self, styles: StyleChain) -> Smart<usize> {
+        self.y(styles)
+    }
 }
 
 impl Show for GridCell {

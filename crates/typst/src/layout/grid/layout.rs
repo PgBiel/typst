@@ -128,6 +128,12 @@ pub trait ResolvableCell {
     /// Creates a cell with empty content.
     /// Needed to fill incomplete rows.
     fn new_empty_cell() -> Self;
+
+    /// Returns this cell's column override.
+    fn x(&self, styles: StyleChain) -> Smart<usize>;
+
+    /// Returns this cell's row override.
+    fn y(&self, styles: StyleChain) -> Smart<usize>;
 }
 
 /// A grid of cells, including the columns, rows, and cell data.
