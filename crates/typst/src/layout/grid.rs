@@ -245,6 +245,7 @@ impl Layout for GridElem {
             inset,
             engine,
             styles,
+            self.span(),
         )?;
 
         // Prepare grid layout by unifying content and gutter tracks.
