@@ -248,6 +248,7 @@ impl Layout for GridElem {
             inset,
             engine,
             styles,
+            self.span(),
         )?;
 
         let layouter = GridLayouter::new(&grid, &stroke, regions, styles, self.span());

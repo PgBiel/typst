@@ -211,8 +211,9 @@ impl CellGrid {
         Self { cols, rows, cells, has_gutter, is_rtl }
     }
 
-    /// Resolves all cells in the grid before creating it.
-    /// Allows them to keep track of their final properties and adjust their fields accordingly.
+    /// Resolves and positions all cells in the grid before creating it.
+    /// Allows them to keep track of their final properties and position and
+    /// update their fields accordingly.
     #[allow(clippy::too_many_arguments)]
     pub fn resolve<T: ResolvableCell>(
         tracks: Axes<&[Sizing]>,
@@ -223,37 +224,102 @@ impl CellGrid {
         inset: Sides<Rel<Length>>,
         engine: &mut Engine,
         styles: StyleChain,
+        span: Span,
     ) -> SourceResult<Self> {
         // Number of content columns: Always at least one.
         let c = tracks.x.len().max(1);
 
-        let mut cells = cells
+        // Create at least 'cells.len()' positions, since there will be at
+        // least 'cells.len()' cells, even though some of them might be placed
+        // in arbitrary positions and thus cause the grid to expand.
+        // We have to rebuild the grid to account for arbitrary positions.
+        let cell_count = cells.len();
+        let mut new_cells = Vec::with_capacity(cell_count);
+        for (i, cell) in cells.into_iter().enumerate() {
+            let x = i % c;
+            let y = i / c;
+
+            // Let's get the cell's desired position.
+            // TODO: Consider the case where one is auto and one isn't.
+            let new_x = cell.x(styles).unwrap_or(x);
+            let new_y = cell.y(styles).unwrap_or(y);
+            let new_i = new_y * c + new_x;
+
+            // Let's resolve the cell so it can determine its own fields
+            // based on its final position.
+            let cell = cell.resolve_cell(
+                new_x,
+                new_y,
+                &fill.resolve(engine, new_x, new_y)?,
+                align.resolve(engine, new_x, new_y)?,
+                inset,
+                styles,
+            );
+
+            // Now let's check if 'new_i' is valid.
+            if new_i == new_cells.len() {
+                // We can just place the new cell at the end of the grid vector.
+                // No other cell can be there.
+                new_cells.push(Some(cell));
+                continue;
+            } else if new_i > new_cells.len() {
+                // The cell wants to be placed in a position which doesn't
+                // exist yet in the grid.
+                // We will add enough absent positions for this to be possible.
+                let new_position_count = (new_i + 1) - new_cells.len();
+                new_cells
+                    .extend(std::iter::repeat_with(|| None).take(new_position_count));
+            }
+
+            // Ensure we aren't trying to place a cell where there is already one.
+            // This unwrap shouldn't panic, as we should have extended the vector enough above.
+            let current_cell = new_cells.get_mut(new_i).unwrap();
+            if !current_cell.is_none() {
+                bail!(
+                    span,
+                    "Attempted to place two different cells at column {new_x}, row {new_y}."
+                );
+            }
+
+            // Finally, place the cell in the grid!
+            *current_cell = Some(cell);
+        }
+
+        // Replace absent entries by resolved empty cells (final step).
+        let mut new_cells = new_cells
             .into_iter()
             .enumerate()
             .map(|(i, cell)| {
-                let x = i % c;
-                let y = i / c;
+                if let Some(cell) = cell {
+                    Ok(cell)
+                } else {
+                    let x = i % c;
+                    let y = i / c;
 
-                Ok(cell.resolve_cell(
-                    x,
-                    y,
-                    &fill.resolve(engine, x, y)?,
-                    align.resolve(engine, x, y)?,
-                    inset,
-                    styles,
-                ))
+                    // Ensure all absent entries are affected by show rules and
+                    // grid styling by turning them into resolved empty cells.
+                    let new_cell = T::new_empty_cell().resolve_cell(
+                        x,
+                        y,
+                        &fill.resolve(engine, x, y)?,
+                        align.resolve(engine, x, y)?,
+                        inset,
+                        styles,
+                    );
+                    Ok(new_cell)
+                }
             })
-            .collect::<SourceResult<Vec<_>>>()?;
+            .collect::<SourceResult<Vec<Cell>>>()?;
 
         // If not all columns in the last row have cells, we will add empty
         // cells and complete the row so that those positions are susceptible
         // to show rules and receive grid styling.
-        let cell_count = cells.len();
-        if cell_count % c != 0 {
-            let cells_remaining = c - (cell_count % c);
-            cells.reserve_exact(cells_remaining);
+        let new_cell_count = new_cells.len();
+        if new_cell_count % c != 0 {
+            let cells_remaining = c - (new_cell_count % c);
+            new_cells.reserve_exact(cells_remaining);
             for offset in 0..cells_remaining {
-                let i = cell_count + offset;
+                let i = new_cell_count + offset;
                 let x = i % c;
                 let y = i / c;
                 let new_cell = T::new_empty_cell().resolve_cell(
@@ -265,11 +331,12 @@ impl CellGrid {
                     styles,
                 );
 
-                cells.push(new_cell);
+                new_cells.push(new_cell);
             }
         }
 
-        Ok(Self::new(tracks, gutter, cells, styles))
+        // Grid is now ready to be built, with cells in the correct positions.
+        Ok(Self::new(tracks, gutter, new_cells, styles))
     }
 
     /// Get the content of the cell in column `x` and row `y`.
