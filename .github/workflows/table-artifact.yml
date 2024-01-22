@@ -43,7 +43,7 @@ jobs:
       if: ${{ matrix.cross}}
       run: |
         cargo install cross --git https://github.com/cross-rs/cross.git
-        cross build -p typst-cli --release --target ${{ matrix.target }} --features self-update
+        cross build -p typst-cli --release --target ${{ matrix.target }} --features self-update,vendor-openssl
 
     - name: Run Cargo
       if: ${{ !matrix.cross }}
@@ -66,7 +66,6 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
+        name: "table-typst-${{ matrix.target }}"
         path: "typst-${{ matrix.target }}.*"
-        retention-days: 1
-        overwrite: true
-
+        retention-days: 15
