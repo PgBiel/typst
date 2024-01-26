@@ -1351,6 +1351,107 @@ fn should_draw_vline_at_row(
     parent_x >= x || parent_y > y
 }
 
+/// Given the 'y' of the row right below the hline (or rows.len() at the
+/// border) and its start..end range of columns, alongside the resolved column
+/// widths, splits the hline into contiguous parts to draw, including the width
+/// of the hline in each part. This will go through each column and interrupt
+/// the current hline to be drawn when a rowspan is detected, or the end of the
+/// column range (or of the table width) is reached.
+/// The idea is to not draw hlines over rowspans.
+/// This will return the start offsets and lengths of each final segment of
+/// this hline. The offsets are relative to the left of the first column.
+#[allow(dead_code)]
+fn split_hline<'rcol>(
+    grid: &CellGrid,
+    columns: impl IntoIterator<Item = &'rcol Abs>,
+    y: usize,
+    start: usize,
+    end: usize,
+) -> impl IntoIterator<Item = (Abs, Abs)> {
+    // Each segment of this hline that should be drawn.
+    // The last element in the vector below is the currently drawn segment.
+    // That is, the last segment will be expanded until interrupted.
+    let mut drawn_hlines = vec![];
+    // Whether the latest hline segment is complete, because we hit a column we
+    // should skip while drawing the hline. Starts at true so we push
+    // the first segment to the vector.
+    let mut interrupted = true;
+    // How far away from the first column have we gone so far.
+    // Used to determine the positions at which to draw each segment.
+    let mut offset = Abs::zero();
+
+    // We start drawing at the first suitable column, and keep going right
+    // (increasing x) expanding the last segment until we hit a column on top
+    // of which we shouldn't draw, which is skipped, leading to the creation of
+    // a new hline segment later if a suitable column is found, restarting the
+    // cycle.
+    for (x, &width) in columns.into_iter().enumerate().take_while(|(x, _)| *x < end) {
+        if should_draw_hline_at_column(grid, x, y, start, end) {
+            if interrupted {
+                // Last segment was interrupted by a rowspan, or there are no
+                // segments yet.
+                // Create a new segment to draw. We start spanning this column.
+                drawn_hlines.push((offset, width));
+                interrupted = false;
+            } else {
+                // Extend the current segment so it covers at least this column
+                // as well.
+                // The vector can't be empty if interrupted is false.
+                let current_segment = drawn_hlines.last_mut().unwrap();
+                current_segment.1 += width;
+            }
+        } else {
+            interrupted = true;
+        }
+        offset += width;
+    }
+
+    drawn_hlines
+}
+
+/// Returns 'true' if the hline right above row 'y', given its start..end range
+/// of columns, should be drawn when going through column 'x'.
+/// That only occurs if the column is within its start..end range, and if it
+/// wouldn't go through a rowspan.
+#[allow(dead_code)]
+fn should_draw_hline_at_column(
+    grid: &CellGrid,
+    x: usize,
+    y: usize,
+    start: usize,
+    end: usize,
+) -> bool {
+    if !(start..end).contains(&x) {
+        // Column is out of range for this line
+        return false;
+    }
+    if y == 0 || y == grid.rows.len() {
+        // Border hline. Always drawn.
+        return true;
+    }
+    // When the hline isn't at the border, we need to check if a rowspan would
+    // be present between rows 'y' and 'y-1' at column 'x', and thus overlap
+    // with the line.
+    // To do so, we analyze the cell right below this hline. If it is merged
+    // with a cell above this line (parent_y < y) which is at this column or
+    // before it (parent_x <= x), this means it would overlap with the hline,
+    // so the hline must not be drawn at this column.
+    let first_adjacent_cell = if grid.has_gutter {
+        // Skip the gutters, if x or y represent gutter tracks.
+        // We would then analyze the cell one column after (if at a gutter
+        // column), and/or one row below (if at a gutter row), in order to
+        // check if it would be merged with a cell before the hline.
+        (x + x % 2, y + y % 2)
+    } else {
+        (x, y)
+    };
+    let Axes { x: parent_x, y: parent_y } = grid
+        .parent_cell_position(first_adjacent_cell.0, first_adjacent_cell.1)
+        .unwrap();
+
+    parent_y >= y || parent_x > x
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
