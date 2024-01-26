@@ -433,6 +433,10 @@ pub struct GridCell {
     #[default(NonZeroUsize::ONE)]
     colspan: NonZeroUsize,
 
+    /// The amount of rows spanned by this cell.
+    #[default(NonZeroUsize::ONE)]
+    rowspan: NonZeroUsize,
+
     /// The cell's fill override.
     fill: Smart<Option<Paint>>,
 
@@ -495,6 +499,10 @@ impl ResolvableCell for Packed<GridCell> {
 
     fn colspan(&self, styles: StyleChain) -> NonZeroUsize {
         (**self).colspan(styles)
+    }
+
+    fn rowspan(&self, styles: StyleChain) -> NonZeroUsize {
+        (**self).rowspan(styles)
     }
 
     fn span(&self) -> Span {
