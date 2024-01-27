@@ -97,12 +97,19 @@ pub struct Cell {
     pub fill: Option<Paint>,
     /// The amount of columns spanned by the cell.
     pub colspan: NonZeroUsize,
+    /// The amount of rows spanned by the cell.
+    pub rowspan: NonZeroUsize,
 }
 
 impl From<Content> for Cell {
     /// Create a simple cell given its body.
     fn from(body: Content) -> Self {
-        Self { body, fill: None, colspan: NonZeroUsize::ONE }
+        Self {
+            body,
+            fill: None,
+            colspan: NonZeroUsize::ONE,
+            rowspan: NonZeroUsize::ONE,
+        }
     }
 }
 
@@ -1461,14 +1468,16 @@ mod test {
             body: Content::default(),
             fill: None,
             colspan: NonZeroUsize::ONE,
+            rowspan: NonZeroUsize::ONE,
         }
     }
 
-    fn cell_with_colspan(colspan: usize) -> Cell {
+    fn cell_with_colspan_rowspan(colspan: usize, rowspan: usize) -> Cell {
         Cell {
             body: Content::default(),
             fill: None,
             colspan: NonZeroUsize::try_from(colspan).unwrap(),
+            rowspan: NonZeroUsize::try_from(rowspan).unwrap(),
         }
     }
 
@@ -1479,21 +1488,21 @@ mod test {
             // row 0
             Entry::Cell(sample_cell()),
             Entry::Cell(sample_cell()),
-            Entry::Cell(cell_with_colspan(2)),
+            Entry::Cell(cell_with_colspan_rowspan(2, 1)),
             Entry::Merged { parent: 2 },
             // row 1
             Entry::Cell(sample_cell()),
-            Entry::Cell(cell_with_colspan(3)),
+            Entry::Cell(cell_with_colspan_rowspan(3, 1)),
             Entry::Merged { parent: 5 },
             Entry::Merged { parent: 5 },
             // row 2
             Entry::Merged { parent: 4 },
             Entry::Cell(sample_cell()),
-            Entry::Cell(cell_with_colspan(2)),
+            Entry::Cell(cell_with_colspan_rowspan(2, 1)),
             Entry::Merged { parent: 10 },
             // row 3
             Entry::Cell(sample_cell()),
-            Entry::Cell(cell_with_colspan(3)),
+            Entry::Cell(cell_with_colspan_rowspan(3, 2)),
             Entry::Merged { parent: 13 },
             Entry::Merged { parent: 13 },
             // row 4
@@ -1504,7 +1513,7 @@ mod test {
             // row 5
             Entry::Cell(sample_cell()),
             Entry::Cell(sample_cell()),
-            Entry::Cell(cell_with_colspan(2)),
+            Entry::Cell(cell_with_colspan_rowspan(2, 1)),
             Entry::Merged { parent: 22 },
         ];
         CellGrid::new_internal(

@@ -470,6 +470,7 @@ impl ResolvableCell for Packed<GridCell> {
     ) -> Cell {
         let cell = &mut *self;
         let colspan = cell.colspan(styles);
+        let rowspan = cell.rowspan(styles);
         let fill = cell.fill(styles).unwrap_or_else(|| fill.clone());
         cell.push_x(Smart::Custom(x));
         cell.push_y(Smart::Custom(y));
@@ -486,7 +487,7 @@ impl ResolvableCell for Packed<GridCell> {
         cell.push_inset(Smart::Custom(
             cell.inset(styles).map_or(inset, |inner| inner.fold(inset)),
         ));
-        Cell { body: self.pack(), fill, colspan }
+        Cell { body: self.pack(), fill, colspan, rowspan }
     }
 
     fn x(&self, styles: StyleChain) -> Smart<usize> {
