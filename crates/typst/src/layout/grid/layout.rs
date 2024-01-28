@@ -809,13 +809,33 @@ impl<'a> GridLayouter<'a> {
                 let half = thickness / 2.0;
 
                 // Render horizontal lines.
-                for offset in points(rows.iter().map(|piece| piece.height)) {
-                    let target = Point::with_x(frame.width() + thickness);
-                    let hline = Geometry::Line(target).stroked(stroke.clone());
-                    frame.prepend(
-                        Point::new(-half, offset),
-                        FrameItem::Shape(hline, self.span),
-                    );
+                // First, calculate their offsets from the left of the frame.
+                let hline_offsets = points(rows.iter().map(|piece| piece.height));
+                // Additionally, determine their indices (the indices of the
+                // rows they are drawn on top of). In principle, this will
+                // correspond to the rows' indices directly, except for the
+                // first and last hlines, which must be 0 and (amount of rows)
+                // respectively, as they are always drawn (due to being part of
+                // the table's border).
+                let hline_indices = std::iter::once(0)
+                    .chain(rows.iter().map(|piece| piece.y).skip(1))
+                    .chain(std::iter::once(self.grid.rows.len()));
+                for (y, dy) in hline_indices.zip(hline_offsets) {
+                    // We want each hline to span the entire table (start
+                    // at x = 0, end after all columns).
+                    // We use 'split_hline' to split the hline such that it
+                    // is not drawn above rowspans.
+                    for (dx, length) in
+                        split_hline(self.grid, &self.rcols, y, 0, self.grid.cols.len())
+                    {
+                        let dx = if self.is_rtl { self.width - dx - length } else { dx };
+                        let target = Point::with_x(length + thickness);
+                        let hline = Geometry::Line(target).stroked(stroke.clone());
+                        frame.prepend(
+                            Point::new(dx - half, dy),
+                            FrameItem::Shape(hline, self.span),
+                        );
+                    }
                 }
 
                 // Render vertical lines.
@@ -1808,7 +1828,6 @@ fn should_draw_vline_at_row(
 /// The idea is to not draw hlines over rowspans.
 /// This will return the start offsets and lengths of each final segment of
 /// this hline. The offsets are relative to the left of the first column.
-#[allow(dead_code)]
 fn split_hline<'rcol>(
     grid: &CellGrid,
     columns: impl IntoIterator<Item = &'rcol Abs>,
@@ -1861,7 +1880,6 @@ fn split_hline<'rcol>(
 /// of columns, should be drawn when going through column 'x'.
 /// That only occurs if the column is within its start..end range, and if it
 /// wouldn't go through a rowspan.
-#[allow(dead_code)]
 fn should_draw_hline_at_column(
     grid: &CellGrid,
     x: usize,
