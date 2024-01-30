@@ -825,9 +825,14 @@ impl<'a> GridLayouter<'a> {
                     // at x = 0, end after all columns).
                     // We use 'split_hline' to split the hline such that it
                     // is not drawn above rowspans.
-                    for (dx, length) in
-                        split_hline(self.grid, &self.rcols, y, 0, self.grid.cols.len())
-                    {
+                    for (dx, length) in split_hline(
+                        self.grid,
+                        &self.rcols,
+                        rows,
+                        y,
+                        0,
+                        self.grid.cols.len(),
+                    ) {
                         let dx = if self.is_rtl { self.width - dx - length } else { dx };
                         let target = Point::with_x(length + thickness);
                         let hline = Geometry::Line(target).stroked(stroke.clone());
@@ -1828,9 +1833,16 @@ fn should_draw_vline_at_row(
 /// The idea is to not draw hlines over rowspans.
 /// This will return the start offsets and lengths of each final segment of
 /// this hline. The offsets are relative to the left of the first column.
+/// The rows argument is needed to know which rows are effectively present in
+/// the current region, in order to avoid unnecessary splitting when the
+/// rowspan's previous rows are either in a previous region or empty (and thus
+/// the hline wouldn't overlap).
+/// This function assumes columns are sorted by increasing 'x', and rows are
+/// sorted by increasing 'y'.
 fn split_hline<'rcol>(
     grid: &CellGrid,
     columns: impl IntoIterator<Item = &'rcol Abs>,
+    rows: &[RowPiece],
     y: usize,
     start: usize,
     end: usize,
@@ -1853,7 +1865,7 @@ fn split_hline<'rcol>(
     // a new hline segment later if a suitable column is found, restarting the
     // cycle.
     for (x, &width) in columns.into_iter().enumerate().take_while(|(x, _)| *x < end) {
-        if should_draw_hline_at_column(grid, x, y, start, end) {
+        if should_draw_hline_at_column(grid, rows, x, y, start, end) {
             if interrupted {
                 // Last segment was interrupted by a rowspan, or there are no
                 // segments yet.
@@ -1882,6 +1894,7 @@ fn split_hline<'rcol>(
 /// wouldn't go through a rowspan.
 fn should_draw_hline_at_column(
     grid: &CellGrid,
+    rows: &[RowPiece],
     x: usize,
     y: usize,
     start: usize,
@@ -1915,7 +1928,15 @@ fn should_draw_hline_at_column(
         .parent_cell_position(first_adjacent_cell.0, first_adjacent_cell.1)
         .unwrap();
 
-    parent_y >= y || parent_x > x
+    // Get the first 'y' spanned by the possible rowspan in this region.
+    // The 'parent_y' row or the following rows could be missing.
+    let effective_parent_y = rows
+        .iter()
+        .find(|row| row.y >= parent_y)
+        .map(|row| row.y)
+        .unwrap_or(y);
+
+    effective_parent_y >= y || parent_x > x
 }
 
 #[cfg(test)]
@@ -2168,6 +2189,13 @@ mod test {
     fn test_hline_splitting_without_gutter() {
         let grid = sample_grid_for_hlines(false);
         let columns = &[Abs::pt(1.), Abs::pt(2.), Abs::pt(4.), Abs::pt(8.)];
+        // Assume all rows would be drawn in the same region, and are available.
+        let rows = grid
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(y, _)| RowPiece { height: Abs::pt(f64::from(2u32.pow(y as u32))), y })
+            .collect::<Vec<_>>();
         let expected_hline_splits = &[
             // top border
             vec![(Abs::pt(0.), Abs::pt(1. + 2. + 4. + 8.))],
@@ -2189,7 +2217,9 @@ mod test {
         for (y, expected_splits) in expected_hline_splits.iter().enumerate() {
             assert_eq!(
                 expected_splits,
-                &split_hline(&grid, columns, y, 0, 4).into_iter().collect::<Vec<_>>(),
+                &split_hline(&grid, columns, &rows, y, 0, 4)
+                    .into_iter()
+                    .collect::<Vec<_>>(),
             );
         }
     }
@@ -2206,6 +2236,13 @@ mod test {
             Abs::pt(32.0),
             Abs::pt(64.0),
         ];
+        // Assume all rows would be drawn in the same region, and are available.
+        let rows = grid
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(y, _)| RowPiece { height: Abs::pt(f64::from(2u32.pow(y as u32))), y })
+            .collect::<Vec<_>>();
         let expected_hline_splits = &[
             // top border
             vec![(Abs::pt(0.), Abs::pt(1. + 2. + 4. + 8. + 16. + 32. + 64.))],
@@ -2253,8 +2290,36 @@ mod test {
         for (y, expected_splits) in expected_hline_splits.iter().enumerate() {
             assert_eq!(
                 expected_splits,
-                &split_hline(&grid, columns, y, 0, 7).into_iter().collect::<Vec<_>>(),
+                &split_hline(&grid, columns, &rows, y, 0, 7)
+                    .into_iter()
+                    .collect::<Vec<_>>(),
             );
         }
+    }
+
+    #[test]
+    fn test_hline_splitting_considers_absent_rows() {
+        let grid = sample_grid_for_hlines(false);
+        let columns = &[Abs::pt(1.), Abs::pt(2.), Abs::pt(4.), Abs::pt(8.)];
+        // Assume row 3 is absent (even though there's a rowspan between rows
+        // 3 and 4)
+        // This can happen if it is an auto row which turns out to be fully
+        // empty.
+        let rows = grid
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(y, _)| *y != 3)
+            .map(|(y, _)| RowPiece { height: Abs::pt(f64::from(2u32.pow(y as u32))), y })
+            .collect::<Vec<_>>();
+
+        // Hline above row 4 is no longer blocked, since the rowspan is now
+        // effectively spanning just one row (at least, visibly).
+        assert_eq!(
+            &vec![(Abs::pt(0.), Abs::pt(1. + 2. + 4. + 8.))],
+            &split_hline(&grid, columns, &rows, 4, 0, 4)
+                .into_iter()
+                .collect::<Vec<_>>()
+        );
     }
 }
