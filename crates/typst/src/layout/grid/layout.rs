@@ -1911,6 +1911,8 @@ fn split_hline<'rcol>(
 /// of columns, should be drawn when going through column 'x'.
 /// That only occurs if the column is within its start..end range, and if it
 /// wouldn't go through a rowspan.
+/// Accepts the vector of rows in the current region in order to check the
+/// effective presence of rows in the final layout.
 fn should_draw_hline_at_column(
     grid: &CellGrid,
     rows: &[RowPiece],
@@ -1947,15 +1949,26 @@ fn should_draw_hline_at_column(
         .parent_cell_position(first_adjacent_cell.0, first_adjacent_cell.1)
         .unwrap();
 
+    if parent_y >= y || parent_x > x {
+        // Cell below the hline is merged with a cell also below it, or with
+        // a cell to the right of the hline, so no overlap possible.
+        return true;
+    }
+
     // Get the first 'y' spanned by the possible rowspan in this region.
-    // The 'parent_y' row or the following rows could be missing.
+    // The 'parent_y' row and any other spanned rows above 'y' could be
+    // missing from this region, which could have lead the check above to not
+    // pass, even though there is no spanned row above the hline in the final
+    // layout.
     let effective_parent_y = rows
         .iter()
         .find(|row| row.y >= parent_y)
         .map(|row| row.y)
         .unwrap_or(y);
 
-    effective_parent_y >= y || parent_x > x
+    // If the first row spanned by the cell under the hline in the current
+    // region is below the hline, that's also fine.
+    effective_parent_y >= y
 }
 
 #[cfg(test)]
