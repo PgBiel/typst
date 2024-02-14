@@ -323,7 +323,7 @@ impl CellGrid {
         items: I,
         fill: &Celled<Option<Paint>>,
         align: &Celled<Smart<Alignment>>,
-        inset: Sides<Option<Rel<Length>>>,
+        inset: &Celled<Sides<Option<Rel<Length>>>>,
         stroke: &ResolvedCelled<Sides<Option<Option<Arc<Stroke>>>>>,
         engine: &mut Engine,
         styles: StyleChain,
@@ -503,7 +503,7 @@ impl CellGrid {
                 y,
                 &fill.resolve(engine, x, y)?,
                 align.resolve(engine, x, y)?,
-                inset,
+                inset.resolve(engine, x, y)?,
                 stroke.resolve(engine, styles, x, y)?,
                 styles,
             );
@@ -589,7 +589,7 @@ impl CellGrid {
                         y,
                         &fill.resolve(engine, x, y)?,
                         align.resolve(engine, x, y)?,
-                        inset,
+                        inset.resolve(engine, x, y)?,
                         stroke.resolve(engine, styles, x, y)?,
                         styles,
                     );
