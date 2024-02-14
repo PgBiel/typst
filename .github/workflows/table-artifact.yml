@@ -15,13 +15,13 @@ jobs:
       matrix:
         include:
         - target: x86_64-unknown-linux-musl
-          os: ubuntu-latest
-          cross: true
+          os: alpine-latest
+          cross: false
         - target: aarch64-unknown-linux-musl
-          os: ubuntu-latest
+          os: alpine-latest
           cross: true
         - target: armv7-unknown-linux-musleabi
-          os: ubuntu-latest
+          os: alpine-latest
           cross: true
         - target: x86_64-apple-darwin
           os: macos-latest
@@ -38,11 +38,6 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         target: ${{ matrix.target }}
-
-    - name: Install OpenSSL
-      if: ${{ matrix.os == 'ubuntu-latest' }}
-      run: |
-        sudo apt install libssl-dev
 
     - name: Run Cross
       if: ${{ matrix.cross}}
