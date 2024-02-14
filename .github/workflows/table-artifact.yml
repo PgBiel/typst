@@ -39,11 +39,6 @@ jobs:
       with:
         target: ${{ matrix.target }}
 
-    - name: Install OpenSSL
-      if: ${{ matrix.os == 'ubuntu-latest' }}
-      run: |
-        sudo apt install libssl-dev
-
     - name: Run Cross
       if: ${{ matrix.cross}}
       run: |
