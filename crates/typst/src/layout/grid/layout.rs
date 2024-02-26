@@ -800,6 +800,28 @@ impl CellGrid {
     pub(super) fn is_gutter_track(&self, index: usize) -> bool {
         self.has_gutter && index % 2 == 1
     }
+
+    /// Returns the effective colspan of a cell, considering the gutters it
+    /// might span if the grid has gutters.
+    #[inline]
+    pub(super) fn effective_colspan_of_cell(&self, cell: &Cell) -> usize {
+        if self.has_gutter {
+            2 * cell.colspan.get() - 1
+        } else {
+            cell.colspan.get()
+        }
+    }
+
+    /// Returns the effective rowspan of a cell, considering the gutters it
+    /// might span if the grid has gutters.
+    #[inline]
+    pub(super) fn effective_rowspan_of_cell(&self, cell: &Cell) -> usize {
+        if self.has_gutter {
+            2 * cell.rowspan.get() - 1
+        } else {
+            cell.rowspan.get()
+        }
+    }
 }
 
 /// Given a cell's requested x and y, the vector with the resolved cell
@@ -1242,12 +1264,7 @@ impl<'a> GridLayouter<'a> {
                         let cell = self.grid.cell(parent_x, parent_y).unwrap();
                         let fill = cell.fill.clone();
                         if let Some(fill) = fill {
-                            let rowspan = cell.rowspan.get();
-                            let rowspan = if self.grid.has_gutter {
-                                2 * rowspan - 1
-                            } else {
-                                rowspan
-                            };
+                            let rowspan = self.grid.effective_rowspan_of_cell(cell);
                             let height = if rowspan == 1 {
                                 row.height
                             } else {
@@ -1258,7 +1275,7 @@ impl<'a> GridLayouter<'a> {
                                     .map(|row| row.height)
                                     .sum()
                             };
-                            let width = self.cell_spanned_width(x, cell.colspan.get());
+                            let width = self.cell_spanned_width(cell, x);
                             // In the grid, cell colspans expand to the right,
                             // so we're at the leftmost (lowest 'x') column
                             // spanned by the cell. However, in RTL, cells
@@ -1341,12 +1358,9 @@ impl<'a> GridLayouter<'a> {
 
     /// Total width spanned by the cell (among resolved columns).
     /// Includes spanned gutter columns.
-    pub(super) fn cell_spanned_width(&self, x: usize, colspan: usize) -> Abs {
-        self.rcols
-            .iter()
-            .skip(x)
-            .take(if self.grid.has_gutter { 2 * colspan - 1 } else { colspan })
-            .sum()
+    pub(super) fn cell_spanned_width(&self, cell: &Cell, x: usize) -> Abs {
+        let colspan = self.grid.effective_colspan_of_cell(cell);
+        self.rcols.iter().skip(x).take(colspan).sum()
     }
 
     /// Measure the size that is available to auto columns.
@@ -1386,7 +1400,7 @@ impl<'a> GridLayouter<'a> {
                     continue;
                 }
                 let cell = self.grid.cell(parent_x, parent_y).unwrap();
-                let colspan = cell.colspan.get();
+                let colspan = self.grid.effective_colspan_of_cell(cell);
                 if colspan > 1 {
                     let last_spanned_auto_col = self
                         .grid
@@ -1394,11 +1408,7 @@ impl<'a> GridLayouter<'a> {
                         .iter()
                         .enumerate()
                         .skip(parent_x)
-                        .take(if self.grid.has_gutter {
-                            2 * colspan - 1
-                        } else {
-                            colspan
-                        })
+                        .take(colspan)
                         .rev()
                         .find(|(_, col)| **col == Sizing::Auto)
                         .map(|(x, _)| x);
@@ -1430,13 +1440,13 @@ impl<'a> GridLayouter<'a> {
                 // Sum the heights of spanned rows to find the expected
                 // available height for the cell, unless it spans a fractional
                 // or auto column.
-                let rowspan = cell.rowspan.get();
+                let rowspan = self.grid.effective_rowspan_of_cell(cell);
                 let height = self
                     .grid
                     .rows
                     .iter()
                     .skip(y)
-                    .take(if self.grid.has_gutter { 2 * rowspan - 1 } else { rowspan })
+                    .take(rowspan)
                     .try_fold(Abs::zero(), |acc, col| {
                         // For relative rows, we can already resolve the correct
                         // base and for auto and fr we could only guess anyway.
@@ -1464,7 +1474,7 @@ impl<'a> GridLayouter<'a> {
                 // an auto column. One mitigation for this is the heuristic
                 // used above to not expand the last auto column spanned by a
                 // cell if it spans all fractional columns in a finite region.
-                let already_covered_width = self.cell_spanned_width(parent_x, colspan);
+                let already_covered_width = self.cell_spanned_width(cell, parent_x);
 
                 let size = Size::new(available, height);
                 let pod = Regions::one(size, Axes::splat(false));
@@ -1630,8 +1640,7 @@ impl<'a> GridLayouter<'a> {
             }
             // The parent cell is never a gutter or merged position.
             let cell = self.grid.cell(parent_x, parent_y).unwrap();
-            let rowspan = cell.rowspan.get();
-            let rowspan = if self.grid.has_gutter { 2 * rowspan - 1 } else { rowspan };
+            let rowspan = self.grid.effective_rowspan_of_cell(cell);
 
             // This variable is used to construct a custom backlog if the cell
             // is a rowspan. When measuring, we join the heights from previous
@@ -1749,7 +1758,7 @@ impl<'a> GridLayouter<'a> {
                 }
             }
 
-            let width = self.cell_spanned_width(x, cell.colspan.get());
+            let width = self.cell_spanned_width(cell, x);
 
             let frames = if unbreakable {
                 // Force cell to fit into a single region when the row is unbreakable.
@@ -1996,7 +2005,7 @@ impl<'a> GridLayouter<'a> {
             if let Some(cell) = self.grid.cell(x, y) {
                 // Rowspans have a separate layout step
                 if cell.rowspan.get() == 1 {
-                    let width = self.cell_spanned_width(x, cell.colspan.get());
+                    let width = self.cell_spanned_width(cell, x);
                     let size = Size::new(width, height);
                     let mut pod = Regions::one(size, Axes::splat(true));
                     if self.grid.rows[y] == Sizing::Auto {
@@ -2051,7 +2060,7 @@ impl<'a> GridLayouter<'a> {
             if let Some(cell) = self.grid.cell(x, y) {
                 // Rowspans have a separate layout step
                 if cell.rowspan.get() == 1 {
-                    let width = self.cell_spanned_width(x, cell.colspan.get());
+                    let width = self.cell_spanned_width(cell, x);
                     pod.size.x = width;
 
                     // Push the layouted frames into the individual output frames.
