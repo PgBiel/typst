@@ -1543,28 +1543,11 @@ impl<'a> GridLayouter<'a> {
 
         // Determine the size for each region of the row. If the first region
         // ends up empty for some column, skip the region and remeasure.
-        let mut resolved = match self.measure_auto_row(
-            engine,
-            y,
-            true,
-            unbreakable,
-            self.unbreakable_rows_left,
-            Abs::zero(),
-            &[],
-        )? {
+        let mut resolved = match self.measure_auto_row(engine, y, true, unbreakable)? {
             Some(resolved) => resolved,
             None => {
                 self.finish_region(engine)?;
-                self.measure_auto_row(
-                    engine,
-                    y,
-                    false,
-                    unbreakable,
-                    self.unbreakable_rows_left,
-                    Abs::zero(),
-                    &[],
-                )?
-                .unwrap()
+                self.measure_auto_row(engine, y, false, unbreakable)?.unwrap()
             }
         };
 
@@ -1612,16 +1595,12 @@ impl<'a> GridLayouter<'a> {
     /// The `previous_unbreakable_*` options are used within the unbreakable
     /// row group simulator to predict the height of the auto row if previous
     /// rows in the group were placed in the same region.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn measure_auto_row(
         &self,
         engine: &mut Engine,
         y: usize,
         can_skip: bool,
         unbreakable: bool,
-        unbreakable_rows_left: usize,
-        previous_unbreakable_height: Abs,
-        previous_unbreakable_rows: &[(usize, Abs)],
     ) -> SourceResult<Option<Vec<Abs>>> {
         let mut resolved: Vec<Abs> = vec![];
         let mut pending_rowspans: Vec<(usize, usize, Vec<Abs>)> = vec![];
@@ -1670,7 +1649,7 @@ impl<'a> GridLayouter<'a> {
                 // 2. Also use the region's backlog when measuring.
                 // 3. No height occupied by this cell in this region so far.
                 // 4. Yes, this cell started in this region.
-                height = self.regions.size.y - previous_unbreakable_height;
+                height = self.regions.size.y;
                 backlog = self.regions.backlog;
                 height_in_this_region = Abs::zero();
                 frames_in_previous_regions = 0;
@@ -1709,16 +1688,9 @@ impl<'a> GridLayouter<'a> {
                     })
                     .sum();
 
-                // If we're currently simulating an unbreakable row group, also
-                // consider the height of previously spanned rows which are in
-                // the row group but not yet laid out.
-                let unbreakable_height: Abs = previous_unbreakable_rows
-                    .iter()
-                    .filter(|(y, _)| (parent_y..parent_y + rowspan).contains(y))
-                    .map(|(_, height)| height)
-                    .sum();
-
-                height_in_this_region = laid_out_height + unbreakable_height;
+                // TODO: Eventually also consider height in the current
+                // unbreakable row group.
+                height_in_this_region = laid_out_height;
 
                 // Ensure we will measure the rowspan with the correct heights.
                 // For that, we will gather the total height spanned by this
@@ -1886,7 +1858,7 @@ impl<'a> GridLayouter<'a> {
 
                 let is_effectively_unbreakable_rowspan = self
                     .is_unbreakable_rowspan(cell, y)
-                    || y + unbreakable_rows_left > last_spanned_row;
+                    || y + self.unbreakable_rows_left > last_spanned_row;
                 let will_be_covered_height = if is_effectively_unbreakable_rowspan {
                     // When the rowspan is unbreakable, or all of its upcoming
                     // spanned rows are unbreakable, its spanned gutter will

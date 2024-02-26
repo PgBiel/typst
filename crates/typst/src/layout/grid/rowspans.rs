@@ -136,7 +136,7 @@ impl<'a> GridLayouter<'a> {
     ) -> SourceResult<()> {
         if self.unbreakable_rows_left == 0 {
             let (unbreakable_rows, group_height) =
-                self.simulate_unbreakable_row_group(current_row, engine)?;
+                self.simulate_unbreakable_row_group(current_row)?;
 
             // Skip to fitting region.
             while !self.regions.size.y.fits(group_height) && !self.regions.in_last() {
@@ -154,10 +154,9 @@ impl<'a> GridLayouter<'a> {
     pub(super) fn simulate_unbreakable_row_group(
         &self,
         first_row: usize,
-        engine: &mut Engine,
     ) -> SourceResult<(usize, Abs)> {
         let mut group_height = Abs::zero();
-        let mut unbreakable_rows = vec![];
+        let mut unbreakable_rows = 0;
         let mut unbreakable_rows_left = 0;
         for (y, row) in self.grid.rows.iter().enumerate().skip(first_row) {
             let additional_unbreakable_rows = self.check_for_unbreakable_cells(y);
@@ -173,26 +172,17 @@ impl<'a> GridLayouter<'a> {
                 Sizing::Rel(v) => {
                     v.resolve(self.styles).relative_to(self.regions.base().y)
                 }
-                Sizing::Auto => self
-                    .measure_auto_row(
-                        engine,
-                        y,
-                        false,
-                        true,
-                        unbreakable_rows_left,
-                        group_height,
-                        &unbreakable_rows,
-                    )?
-                    .unwrap()
-                    .first()
-                    .copied()
-                    .unwrap_or_else(Abs::zero),
+                Sizing::Auto => {
+                    // TODO: Allow user to force rowspans crossing auto rows to
+                    // be unbreakable.
+                    unreachable!();
+                }
                 // Fractional rows don't matter when calculating the space
                 // needed for unbreakable rows
                 Sizing::Fr(_) => Abs::zero(),
             };
             group_height += height;
-            unbreakable_rows.push((y, height));
+            unbreakable_rows += 1;
             unbreakable_rows_left -= 1;
             if unbreakable_rows_left == 0 {
                 // This second check is necessary so we can tell distinct
@@ -202,7 +192,7 @@ impl<'a> GridLayouter<'a> {
                 break;
             }
         }
-        Ok((unbreakable_rows.len(), group_height))
+        Ok((unbreakable_rows, group_height))
     }
 
     /// Checks if one or more of the cells at the given row are unbreakable.
