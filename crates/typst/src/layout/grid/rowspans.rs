@@ -6,6 +6,8 @@ use crate::layout::{
 };
 use crate::util::{MaybeReverseIter, Numeric};
 
+use super::layout::{Row, RowPiece};
+
 /// All information needed to layout a single rowspan.
 pub(super) struct Rowspan {
     // First column of this rowspan.
@@ -39,9 +41,10 @@ pub(super) struct UnbreakableRowGroup {
 
 impl<'a> GridLayouter<'a> {
     /// Layout rowspans over the already finished regions, plus the current
-    /// region, if it wasn't finished yet (because we're being called from
-    /// 'finish_region', but note that this function is also called once after
-    /// all regions are finished, in which case 'current_region' is None).
+    /// region's frame and resolved rows, if it wasn't finished yet (because
+    /// we're being called from 'finish_region', but note that this function is
+    /// also called once after all regions are finished, in which case
+    /// 'current_region_data' is None).
     ///
     /// We need to do this only once we already know the heights of all
     /// spanned rows, which is only possible after laying out the last row
@@ -49,7 +52,7 @@ impl<'a> GridLayouter<'a> {
     pub(super) fn layout_rowspan(
         &mut self,
         rowspan_data: Rowspan,
-        current_region: Option<&mut Frame>,
+        current_region_data: Option<(&mut Frame, &[RowPiece])>,
         engine: &mut Engine,
     ) -> SourceResult<()> {
         let Rowspan {
@@ -72,17 +75,44 @@ impl<'a> GridLayouter<'a> {
         // Push the layouted frames directly into the finished frames.
         // At first, we draw the rowspan starting at its expected offset
         // in the first region.
-        let mut pos = Point::new(dx, dy);
+        let first_pos = Point::new(dx, dy);
+        let mut pos = Some(first_pos);
         let fragment = cell.layout(engine, self.styles, pod)?;
-        for (finished, frame) in self
+        let (current_region, current_rrows) = current_region_data.unzip();
+        for ((i, finished), frame) in self
             .finished
             .iter_mut()
             .chain(current_region.into_iter())
+            .enumerate()
             .skip(first_region)
             .zip(fragment)
         {
             {
-                let mut pos = pos;
+                let mut pos = pos.unwrap_or_else(|| {
+                    let mut pos = first_pos;
+
+                    // The rowspan continuation starts after the header (thus,
+                    // at a position after the sum of the laid out header
+                    // rows).
+                    pos.y = if let Some(header) = &self.grid.header {
+                        let header_rows = self
+                            .rrows
+                            .get(i)
+                            .map(|rrows| &**rrows)
+                            .or(current_rrows)
+                            .and_then(|rrows| rrows.get(0..header.end));
+
+                        header_rows
+                            .into_iter()
+                            .flatten()
+                            .map(|row| row.height)
+                            .sum::<Abs>()
+                    } else {
+                        Abs::zero()
+                    };
+
+                    pos
+                });
                 if self.is_rtl {
                     let offset = -width + first_column;
                     pos.x += offset;
@@ -91,8 +121,8 @@ impl<'a> GridLayouter<'a> {
             }
 
             // From the second region onwards, the rowspan's continuation
-            // starts at the very top.
-            pos.y = Abs::zero();
+            // starts at the very top, bar header.
+            pos = None;
         }
 
         Ok(())
@@ -311,6 +341,8 @@ impl<'a> GridLayouter<'a> {
             simulated_sizes.insert(0, modified_last_resolved_size);
         }
 
+        let header_height = self.header_height(engine).unwrap_or_default();
+
         // Prepare regions for simulation.
         // If we're currently inside an unbreakable row group simulation,
         // subtract the current row group height from the available space
@@ -322,6 +354,7 @@ impl<'a> GridLayouter<'a> {
             // row.
             simulated_regions.next();
         }
+        simulated_regions.size.y -= header_height;
         if let Some(original_last_resolved_size) = last_resolved_size {
             // We're now at the (current) last region of this auto row.
             // Consider resolved height as already taken space.
@@ -374,6 +407,7 @@ impl<'a> GridLayouter<'a> {
                         total_spanned_height -= latest_spanned_gutter_height;
                         latest_spanned_gutter_height = Abs::zero();
                         regions.next();
+                        regions.size.y -= header_height;
                     }
 
                     unbreakable_rows_left = row_group.rows.len();
@@ -398,6 +432,7 @@ impl<'a> GridLayouter<'a> {
                             latest_spanned_gutter_height = Abs::zero();
                             skipped_region = true;
                             regions.next();
+                            regions.size.y -= header_height;
                         }
                         if !skipped_region || !is_gutter {
                             // No gutter at the top of a new region, so don't
@@ -488,6 +523,7 @@ impl<'a> GridLayouter<'a> {
             {
                 extra_amount_to_grow -= regions.size.y.max(Abs::zero());
                 regions.next();
+                regions.size.y -= header_height;
             }
             simulated_regions.size.y -= extra_amount_to_grow;
         }
@@ -516,6 +552,23 @@ impl<'a> GridLayouter<'a> {
         resolved.extend(simulated_sizes);
 
         Ok(())
+    }
+
+    /// The height of the header in the current region. Returns None if it
+    /// wasn't laid out yet.
+    pub(super) fn header_height(&self, _engine: &mut Engine) -> Option<Abs> {
+        self.grid
+            .header
+            .as_ref()
+            .and_then(|header| self.lrows.get(0..header.end))
+            .map(|rows| {
+                rows.iter()
+                    .map(|row| match row {
+                        Row::Frame(frame, _, _) => frame.height(),
+                        Row::Fr(_, _) => Abs::zero(),
+                    })
+                    .sum::<Abs>()
+            })
     }
 }
 

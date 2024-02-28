@@ -1709,6 +1709,8 @@ impl<'a> GridLayouter<'a> {
             return Ok(());
         }
 
+        let header_height = self.header_height(engine).unwrap_or(Abs::zero());
+
         // Expand all but the last region.
         // Skip the first region if the space is eaten up by an fr row.
         let len = resolved.len();
@@ -1718,7 +1720,7 @@ impl<'a> GridLayouter<'a> {
             .zip(&mut resolved[..len - 1])
             .skip(self.lrows.iter().any(|row| matches!(row, Row::Fr(..))) as usize)
         {
-            target.set_max(region.y);
+            target.set_max(region.y - header_height);
         }
 
         // Layout into multiple regions.
@@ -1753,6 +1755,7 @@ impl<'a> GridLayouter<'a> {
         let unbreakable = unbreakable_rows_left > 0;
         let mut resolved: Vec<Abs> = vec![];
         let mut pending_rowspans: Vec<(usize, usize, Vec<Abs>)> = vec![];
+        let header_height = self.header_height(engine);
 
         for x in 0..self.rcols.len() {
             // Get the parent cell in case this is a merged position.
@@ -1771,10 +1774,16 @@ impl<'a> GridLayouter<'a> {
             let rowspan = self.grid.effective_rowspan_of_cell(cell);
 
             // This variable is used to construct a custom backlog if the cell
-            // is a rowspan. When measuring, we join the heights from previous
-            // regions to the current backlog to form the rowspan's expected
-            // backlog.
-            let rowspan_backlog: Vec<Abs>;
+            // is a rowspan, or if headers are used. When measuring, we join
+            // the heights from previous regions to the current backlog to form
+            // a rowspan's expected backlog. We also subtract the header's
+            // height from all regions.
+            let custom_backlog: Vec<Abs>;
+            let adapt_backlog_to_header = |backlog: &mut [Abs], header_height: Abs| {
+                for height in backlog {
+                    *height -= header_height;
+                }
+            };
 
             // Each declaration, from left to right:
             // 1. The height available to the cell in the first region.
@@ -1795,13 +1804,21 @@ impl<'a> GridLayouter<'a> {
                 // remaining in the region as the height it has available.
                 // Ensure we subtract the height of previous rows in the
                 // unbreakable row group, if we're currently simulating it.
-                // 2. Also use the region's backlog when measuring.
-                // 3. No height occupied by this cell in this region so far.
-                // 4. Yes, this cell started in this region.
+                // 2. No height occupied by this cell in this region so far.
+                // 3. Yes, this cell started in this region.
                 height = self.regions.size.y - row_group_data.height;
-                backlog = self.regions.backlog;
                 height_in_this_region = Abs::zero();
                 frames_in_previous_regions = 0;
+                if let Some(header_height) = header_height {
+                    // Subtract header height from the backlog.
+                    let mut new_backlog: Vec<Abs> = self.regions.backlog.to_vec();
+                    adapt_backlog_to_header(&mut new_backlog, header_height);
+                    custom_backlog = new_backlog;
+                    backlog = &*custom_backlog;
+                } else {
+                    // No need to change the backlog.
+                    backlog = self.regions.backlog;
+                }
             } else {
                 let last_spanned_auto_row = self
                     .grid
@@ -1865,7 +1882,7 @@ impl<'a> GridLayouter<'a> {
                     // remaining heights, plus the current region's size, plus
                     // the current backlog.
                     frames_in_previous_regions = rowspan_other_heights.len() + 1;
-                    rowspan_backlog = if unbreakable {
+                    let mut rowspan_backlog = if unbreakable {
                         // No extra backlog if this is an unbreakable auto row.
                         // Ensure, when measuring, that the rowspan can be laid
                         // out through all spanned rows which were already laid
@@ -1887,8 +1904,18 @@ impl<'a> GridLayouter<'a> {
                             .chain(self.regions.backlog.iter().copied())
                             .collect::<Vec<_>>()
                     };
+                    if let Some(header_height) = header_height {
+                        // Only adapt the heights which weren't already laid
+                        // out to consider the header.
+                        adapt_backlog_to_header(
+                            &mut rowspan_backlog[rowspan_other_heights.len()..],
+                            header_height,
+                        );
+                    }
 
-                    (height, backlog) = (*rowspan_height, &rowspan_backlog);
+                    custom_backlog = rowspan_backlog;
+
+                    (height, backlog) = (*rowspan_height, &custom_backlog);
                 } else {
                     // The rowspan started in the current region, as its vector
                     // of heights in regions is currently empty.
@@ -1899,7 +1926,16 @@ impl<'a> GridLayouter<'a> {
                     // The backlog will be the same as the current one.
                     frames_in_previous_regions = 0;
                     height = height_in_this_region + self.regions.size.y;
-                    backlog = &self.regions.backlog;
+                    if let Some(header_height) = header_height {
+                        // Subtract header height from the backlog.
+                        let mut new_backlog: Vec<Abs> = self.regions.backlog.to_vec();
+                        adapt_backlog_to_header(&mut new_backlog, header_height);
+                        custom_backlog = new_backlog;
+                        backlog = &*custom_backlog;
+                    } else {
+                        // No need to change the backlog.
+                        backlog = self.regions.backlog;
+                    }
                 }
             }
 
@@ -1928,6 +1964,15 @@ impl<'a> GridLayouter<'a> {
                 let mut pod = self.regions;
                 pod.size = Axes::new(width, height);
                 pod.backlog = backlog;
+
+                if let Some(last) = &mut pod.last {
+                    if let Some(header_height) = header_height {
+                        // Adapt the last region height to consider the header
+                        // height.
+                        *last -= header_height;
+                    }
+                }
+
                 cell.measure(engine, self.styles, pod)?.into_frames()
             };
 
@@ -2326,7 +2371,11 @@ impl<'a> GridLayouter<'a> {
                         // we have to check the same index again in the next
                         // iteration.
                         let rowspan = self.rowspans.remove(i);
-                        self.layout_rowspan(rowspan, Some(&mut output), engine)?;
+                        self.layout_rowspan(
+                            rowspan,
+                            Some((&mut output, &rrows)),
+                            engine,
+                        )?;
                     } else {
                         i += 1;
                     }
