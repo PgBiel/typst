@@ -243,6 +243,12 @@ impl Entry {
     }
 }
 
+/// A repeatable grid header. Starts at the first row.
+pub(super) struct Header {
+    /// The index after the last row included in this header.
+    pub(super) end: usize,
+}
+
 /// A grid item, possibly affected by automatic cell positioning. Can be either
 /// a line or a cell.
 pub enum GridItem<T: ResolvableCell> {
@@ -326,6 +332,8 @@ pub struct CellGrid {
     /// Gutter rows are not included.
     /// Contains up to 'rows_without_gutter.len() + 1' vectors of lines.
     pub(super) hlines: Vec<Vec<Line>>,
+    /// The repeatable header of this grid.
+    pub(super) header: Option<Header>,
     /// Whether this grid has gutters.
     pub(super) has_gutter: bool,
 }
@@ -338,7 +346,7 @@ impl CellGrid {
         cells: impl IntoIterator<Item = Cell>,
     ) -> Self {
         let entries = cells.into_iter().map(Entry::Cell).collect();
-        Self::new_internal(tracks, gutter, vec![], vec![], entries)
+        Self::new_internal(tracks, gutter, vec![], vec![], None, entries)
     }
 
     /// Resolves and positions all cells in the grid before creating it.
@@ -356,6 +364,7 @@ impl CellGrid {
         align: &Celled<Smart<Alignment>>,
         inset: &Celled<Sides<Option<Rel<Length>>>>,
         stroke: &ResolvedCelled<Sides<Option<Option<Arc<Stroke>>>>>,
+        header_rows: usize,
         engine: &mut Engine,
         styles: StyleChain,
         span: Span,
@@ -623,6 +632,14 @@ impl CellGrid {
         let mut hlines: Vec<Vec<Line>> = vec![];
         let row_amount = resolved_cells.len().div_ceil(c);
 
+        let header_rows =
+            if has_gutter { (2 * header_rows).saturating_sub(1) } else { header_rows };
+        if row_amount < header_rows {
+            bail!(span, "cannot have more header rows than rows");
+        }
+        let header =
+            if header_rows > 0 { Some(Header { end: header_rows }) } else { None };
+
         for (line_span, line) in pending_hlines {
             let y = line.index;
             if y > row_amount {
@@ -698,7 +715,7 @@ impl CellGrid {
             vlines[x].push(line);
         }
 
-        Ok(Self::new_internal(tracks, gutter, vlines, hlines, resolved_cells))
+        Ok(Self::new_internal(tracks, gutter, vlines, hlines, header, resolved_cells))
     }
 
     /// Generates the cell grid, given the tracks and resolved entries.
@@ -707,6 +724,7 @@ impl CellGrid {
         gutter: Axes<&[Sizing]>,
         vlines: Vec<Vec<Line>>,
         hlines: Vec<Vec<Line>>,
+        header: Option<Header>,
         entries: Vec<Entry>,
     ) -> Self {
         let mut cols = vec![];
@@ -753,7 +771,15 @@ impl CellGrid {
             rows.pop();
         }
 
-        Self { cols, rows, entries, vlines, hlines, has_gutter }
+        Self {
+            cols,
+            rows,
+            entries,
+            vlines,
+            hlines,
+            header,
+            has_gutter,
+        }
     }
 
     /// Get the grid entry in column `x` and row `y`.
@@ -1061,30 +1087,7 @@ impl<'a> GridLayouter<'a> {
         self.measure_columns(engine)?;
 
         for y in 0..self.grid.rows.len() {
-            // Skip to next region if current one is full, but only for content
-            // rows, not for gutter rows, and only if we aren't laying out an
-            // unbreakable group of rows.
-            let is_content_row = !self.grid.is_gutter_track(y);
-            if self.unbreakable_rows_left == 0 && self.regions.is_full() && is_content_row
-            {
-                self.finish_region(engine)?;
-            }
-
-            // Don't layout gutter rows at the top of a region.
-            if is_content_row || !self.lrows.is_empty() {
-                self.check_for_rowspans(y);
-                self.check_for_unbreakable_rows(y, engine)?;
-
-                match self.grid.rows[y] {
-                    Sizing::Auto => self.layout_auto_row(engine, y)?,
-                    Sizing::Rel(v) => self.layout_relative_row(engine, v, y)?,
-                    Sizing::Fr(v) => {
-                        self.lrows.push(Row::Fr(v, y));
-                    }
-                }
-            }
-
-            self.unbreakable_rows_left = self.unbreakable_rows_left.saturating_sub(1);
+            self.layout_row(y, engine)?;
         }
 
         self.finish_region(engine)?;
@@ -1105,6 +1108,35 @@ impl<'a> GridLayouter<'a> {
             .try_for_each(|rowspan| self.layout_rowspan(rowspan, None, engine))?;
 
         self.render_fills_strokes()
+    }
+
+    /// Layout the given row.
+    fn layout_row(&mut self, y: usize, engine: &mut Engine) -> SourceResult<()> {
+        // Skip to next region if current one is full, but only for content
+        // rows, not for gutter rows, and only if we aren't laying out an
+        // unbreakable group of rows.
+        let is_content_row = !self.grid.is_gutter_track(y);
+        if self.unbreakable_rows_left == 0 && self.regions.is_full() && is_content_row {
+            self.finish_region(engine)?;
+        }
+
+        // Don't layout gutter rows at the top of a region.
+        if is_content_row || !self.lrows.is_empty() {
+            self.check_for_rowspans(y);
+            self.check_for_unbreakable_rows(y, engine)?;
+
+            match self.grid.rows[y] {
+                Sizing::Auto => self.layout_auto_row(engine, y)?,
+                Sizing::Rel(v) => self.layout_relative_row(engine, v, y)?,
+                Sizing::Fr(v) => {
+                    self.lrows.push(Row::Fr(v, y));
+                }
+            }
+        }
+
+        self.unbreakable_rows_left = self.unbreakable_rows_left.saturating_sub(1);
+
+        Ok(())
     }
 
     /// Add lines and backgrounds.
@@ -2177,6 +2209,17 @@ impl<'a> GridLayouter<'a> {
             // Remove the last row in the region if it is a gutter row.
             self.lrows.pop().unwrap();
         }
+
+        if let Some(header) = &self.grid.header {
+            if self.grid.rows.len() > header.end && self.lrows.len() <= header.end {
+                // Header would be alone in this region. Skip this region.
+                self.lrows.clear();
+                self.regions.next();
+                self.initial = self.regions.size;
+                return Ok(());
+            }
+        }
+
         // Determine the height of existing rows in the region.
         let mut used = Abs::zero();
         let mut fr = Fr::zero();
@@ -2299,6 +2342,16 @@ impl<'a> GridLayouter<'a> {
         self.rrows.push(rrows);
         self.regions.next();
         self.initial = self.regions.size;
+
+        if let Some(header) = &self.grid.header {
+            // Header is unbreakable.
+            // Thus, no risk of 'finish_region' being recursively called from
+            // within 'layout_row'.
+            self.unbreakable_rows_left += header.end;
+            for y in 0..header.end {
+                self.layout_row(y, engine)?;
+            }
+        }
 
         Ok(())
     }
