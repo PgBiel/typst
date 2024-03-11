@@ -819,6 +819,14 @@ pub struct GridCell {
     /// unbreakable, while a cell spanning at least one `{auto}`-sized row is
     /// breakable.
     pub breakable: Smart<bool>,
+
+    /// If this cell should fit within the height of `{auto}`-sized rows
+    /// instead of potentially causing such rows to expand enough to fit the
+    /// cell's height. When this is enabled, relative lengths, such as
+    /// `{59% + 5pt}`, will be calculated relative to the final height of the
+    /// row (based on the contents of other cells in that row) and not to the
+    /// height available in the page or container the table is in.
+    pub fit: bool,
 }
 
 cast! {
@@ -848,6 +856,7 @@ impl ResolvableCell for Packed<GridCell> {
         let colspan = cell.colspan(styles);
         let rowspan = cell.rowspan(styles);
         let breakable = cell.breakable(styles).unwrap_or(breakable);
+        let fit = cell.fit(styles);
         let fill = cell.fill(styles).unwrap_or_else(|| fill.clone());
 
         let cell_stroke = cell.stroke(styles);
@@ -901,6 +910,7 @@ impl ResolvableCell for Packed<GridCell> {
             stroke,
             stroke_overridden,
             breakable,
+            fit,
         }
     }
 
