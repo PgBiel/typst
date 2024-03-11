@@ -809,7 +809,7 @@ pub struct TableCell {
     /// `{59% + 5pt}`, will be calculated relative to the final height of the
     /// row (based on the contents of other cells in that row) and not to the
     /// height available in the page or container the table is in.
-    pub fit: bool,
+    pub fit: Axes<bool>,
 }
 
 cast! {

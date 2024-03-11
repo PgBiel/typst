@@ -192,9 +192,12 @@ pub struct Cell {
     /// By default, a cell spanning only fixed-size rows is unbreakable, while
     /// a cell spanning at least one `auto`-sized row is breakable.
     pub breakable: bool,
-    /// If this cell should not affect the height of auto rows, but rather fit
-    /// within the height determined by other cells of those rows.
-    pub fit: bool,
+    /// If this cell should not affect the size of auto tracks, but rather fit
+    /// within the size determined by other cells in those tracks.
+    ///
+    /// The 'x' value controls whether the cell affects the sizes of spanned
+    /// auto columns, and the 'y' value, of spanned auto rows.
+    pub fit: Axes<bool>,
 }
 
 impl From<Content> for Cell {
@@ -208,7 +211,7 @@ impl From<Content> for Cell {
             stroke: Sides::splat(None),
             stroke_overridden: Sides::splat(false),
             breakable: true,
-            fit: false,
+            fit: Axes::splat(false),
         }
     }
 }
@@ -2133,6 +2136,11 @@ impl<'a> GridLayouter<'a> {
                     continue;
                 }
                 let cell = self.grid.cell(parent.x, parent.y).unwrap();
+                if cell.fit.x {
+                    // This cell doesn't affect the size of auto columns.
+                    continue;
+                }
+
                 let colspan = self.grid.effective_colspan_of_cell(cell);
                 if colspan > 1 {
                     let last_spanned_auto_col = self
@@ -2381,7 +2389,7 @@ impl<'a> GridLayouter<'a> {
             }
             // The parent cell is never a gutter or merged position.
             let cell = self.grid.cell(parent.x, parent.y).unwrap();
-            if cell.fit {
+            if cell.fit.y {
                 // Cell doesn't affect the height of auto rows.
                 continue;
             }
