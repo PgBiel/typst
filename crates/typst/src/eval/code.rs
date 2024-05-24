@@ -132,6 +132,7 @@ impl Eval for ast::Expr<'_> {
             Self::Break(v) => v.eval(vm),
             Self::Continue(v) => v.eval(vm),
             Self::Return(v) => v.eval(vm),
+            Self::AllowWarning(v) => v.eval(vm),
         }?
         .spanned(span);
 
@@ -354,5 +355,13 @@ impl Eval for ast::Contextual<'_> {
 
         let func = Func::from(closure).spanned(body.span());
         Ok(ContextElem::new(func).pack())
+    }
+}
+
+impl Eval for ast::AllowWarning<'_> {
+    type Output = Value;
+
+    fn eval(self, vm: &mut Vm) -> SourceResult<Self::Output> {
+        self.body().eval(vm)
     }
 }

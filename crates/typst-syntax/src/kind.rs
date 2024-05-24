@@ -189,6 +189,8 @@ pub enum SyntaxKind {
     Include,
     /// The `as` keyword.
     As,
+    /// The `allow` keyword for allowed warnings.
+    Allow,
 
     /// The contents of a code block.
     Code,
@@ -252,8 +254,6 @@ pub enum SyntaxKind {
     ModuleImport,
     /// Items to import from a module: `a, b, c`.
     ImportItems,
-    /// A renamed import item: `a as d`.
-    RenamedImportItem,
     /// A module include: `include "chapter1.typ"`.
     ModuleInclude,
     /// A break from a loop: `break`.
@@ -275,6 +275,11 @@ pub enum SyntaxKind {
     Error,
     /// The end of token stream.
     End,
+
+    /// A renamed import item: `a as d`.
+    RenamedImportItem,
+    /// Expression with allowed warning: `allow("message") { ... }`
+    AllowWarning,
 }
 
 impl SyntaxKind {
@@ -344,6 +349,7 @@ impl SyntaxKind {
                 | Self::Import
                 | Self::Include
                 | Self::As
+                | Self::Allow
         )
     }
 
@@ -494,6 +500,8 @@ impl SyntaxKind {
             Self::BlockComment => "block comment",
             Self::Error => "syntax error",
             Self::End => "end of tokens",
+            Self::Allow => "keyword `allow`",
+            Self::AllowWarning => "`allow` expression",
         }
     }
 }

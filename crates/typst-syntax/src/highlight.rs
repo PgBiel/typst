@@ -245,6 +245,7 @@ pub fn highlight(node: &LinkedNode) -> Option<Tag> {
         SyntaxKind::Import => Some(Tag::Keyword),
         SyntaxKind::Include => Some(Tag::Keyword),
         SyntaxKind::As => Some(Tag::Keyword),
+        SyntaxKind::Allow => Some(Tag::Keyword),
 
         SyntaxKind::Code => None,
         SyntaxKind::Ident => highlight_ident(node),
@@ -272,6 +273,7 @@ pub fn highlight(node: &LinkedNode) -> Option<Tag> {
         SyntaxKind::SetRule => None,
         SyntaxKind::ShowRule => None,
         SyntaxKind::Contextual => None,
+        SyntaxKind::AllowWarning => None,
         SyntaxKind::Conditional => None,
         SyntaxKind::WhileLoop => None,
         SyntaxKind::ForLoop => None,

@@ -782,6 +782,7 @@ fn code_primary(p: &mut Parser, atomic: bool) {
         SyntaxKind::Set => set_rule(p),
         SyntaxKind::Show => show_rule(p),
         SyntaxKind::Context => contextual(p, atomic),
+        SyntaxKind::Allow => allow_warning(p, atomic),
         SyntaxKind::If => conditional(p),
         SyntaxKind::While => while_loop(p),
         SyntaxKind::For => for_loop(p),
@@ -926,6 +927,17 @@ fn contextual(p: &mut Parser, atomic: bool) {
     p.assert(SyntaxKind::Context);
     code_expr_prec(p, atomic, 0);
     p.wrap(m, SyntaxKind::Contextual);
+}
+
+/// Parses an `allow` expression: `allow("warn name") { expression }`.
+fn allow_warning(p: &mut Parser, atomic: bool) {
+    let m = p.marker();
+    p.assert(SyntaxKind::Allow);
+    p.expect(SyntaxKind::LeftParen);
+    p.expect(SyntaxKind::Str);
+    p.expect(SyntaxKind::RightParen);
+    code_expr_prec(p, atomic, 0);
+    p.wrap(m, SyntaxKind::AllowWarning);
 }
 
 /// Parses an if-else conditional: `if x { y } else { z }`.

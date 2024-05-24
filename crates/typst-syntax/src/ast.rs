@@ -187,6 +187,8 @@ pub enum Expr<'a> {
     Show(ShowRule<'a>),
     /// A contextual expression: `context text.lang`.
     Contextual(Contextual<'a>),
+    /// An expression with an allowed warning: `allow("warn name") { ... }`
+    AllowWarning(AllowWarning<'a>),
     /// An if-else conditional: `if x { y } else { z }`.
     Conditional(Conditional<'a>),
     /// A while loop: `while x { y }`.
@@ -265,6 +267,7 @@ impl<'a> AstNode<'a> for Expr<'a> {
             SyntaxKind::SetRule => node.cast().map(Self::Set),
             SyntaxKind::ShowRule => node.cast().map(Self::Show),
             SyntaxKind::Contextual => node.cast().map(Self::Contextual),
+            SyntaxKind::AllowWarning => node.cast().map(Self::AllowWarning),
             SyntaxKind::Conditional => node.cast().map(Self::Conditional),
             SyntaxKind::WhileLoop => node.cast().map(Self::While),
             SyntaxKind::ForLoop => node.cast().map(Self::For),
@@ -328,6 +331,7 @@ impl<'a> AstNode<'a> for Expr<'a> {
             Self::Set(v) => v.to_untyped(),
             Self::Show(v) => v.to_untyped(),
             Self::Contextual(v) => v.to_untyped(),
+            Self::AllowWarning(v) => v.to_untyped(),
             Self::Conditional(v) => v.to_untyped(),
             Self::While(v) => v.to_untyped(),
             Self::For(v) => v.to_untyped(),
@@ -1923,6 +1927,23 @@ impl<'a> Contextual<'a> {
     /// The expression which depends on the context.
     pub fn body(self) -> Expr<'a> {
         self.0.cast_first_match().unwrap_or_default()
+    }
+}
+
+node! {
+    /// An expression with an allowed warning: `allow("message") { ... }`
+    AllowWarning
+}
+
+impl<'a> AllowWarning<'a> {
+    /// Gets the allowed warning.
+    pub fn warning(self) -> EcoString {
+        self.0.cast_first_match::<Str<'a>>().unwrap_or_default().get()
+    }
+
+    /// Gets the body within which the warning was allowed.
+    pub fn body(self) -> Expr<'a> {
+        self.0.cast_last_match().unwrap_or_default()
     }
 }
 

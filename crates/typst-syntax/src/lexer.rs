@@ -761,6 +761,7 @@ fn keyword(ident: &str) -> Option<SyntaxKind> {
         "import" => SyntaxKind::Import,
         "include" => SyntaxKind::Include,
         "as" => SyntaxKind::As,
+        "allow" => SyntaxKind::Allow,
         _ => return None,
     })
 }

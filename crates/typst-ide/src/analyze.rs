@@ -26,7 +26,9 @@ pub fn analyze_expr(
         ast::Expr::Numeric(v) => Value::numeric(v.get()),
         ast::Expr::Str(v) => Value::Str(v.get().into()),
         _ => {
-            if node.kind() == SyntaxKind::Contextual {
+            if node.kind() == SyntaxKind::Contextual
+                || node.kind() == SyntaxKind::AllowWarning
+            {
                 if let Some(child) = node.children().last() {
                     return analyze_expr(world, &child);
                 }
