@@ -111,6 +111,7 @@ pub(super) fn define(global: &mut Scope, inputs: Dict) {
     global.define_func::<assert>();
     global.define_func::<eval>();
     global.define_func::<style>();
+    global.define_func::<allow_warn>();
     global.define_module(calc::module());
     global.define_module(sys::module(inputs));
 }
@@ -142,6 +143,21 @@ pub fn panic(
         }
     }
     Err(msg)
+}
+
+/// Temporarily allows a warn.
+#[func]
+pub fn allow_warn(
+    engine: &mut Engine,
+    context: comemo::Tracked<Context>,
+    warning: EcoString,
+    callback: Func,
+) -> SourceResult<Value> {
+    engine.tracer.allow_warn(warning.clone());
+    let res = callback.call::<[Value; 0]>(engine, context, []);
+    engine.tracer.enforce_warn(&warning);
+
+    res
 }
 
 /// Ensures that a condition is fulfilled.

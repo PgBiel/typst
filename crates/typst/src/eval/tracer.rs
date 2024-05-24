@@ -15,6 +15,7 @@ pub struct Tracer {
     warnings_set: HashSet<u128>,
     delayed: EcoVec<SourceDiagnostic>,
     values: EcoVec<(Value, Option<Styles>)>,
+    allowed_warnings: HashSet<ecow::EcoString>,
 }
 
 impl Tracer {
@@ -57,11 +58,24 @@ impl Tracer {
 
     /// Add a warning.
     pub fn warn(&mut self, warning: SourceDiagnostic) {
+        if self.allowed_warnings.contains(&warning.message) {
+            return;
+        }
         // Check if warning is a duplicate.
         let hash = hash128(&(&warning.span, &warning.message));
         if self.warnings_set.insert(hash) {
             self.warnings.push(warning);
         }
+    }
+
+    /// Allow a warning.
+    pub fn allow_warn(&mut self, warning: ecow::EcoString) {
+        self.allowed_warnings.insert(warning);
+    }
+
+    /// Enforce a previously allowed warning.
+    pub fn enforce_warn(&mut self, warning: &str) {
+        self.allowed_warnings.remove(warning);
     }
 
     /// The inspected span if it is part of the given source file.
