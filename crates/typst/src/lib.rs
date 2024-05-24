@@ -98,10 +98,16 @@ pub fn compile(world: &dyn World, tracer: &mut Tracer) -> SourceResult<Document>
         tracer.track_mut(),
         &world.main(),
     )
-    .map_err(deduplicate)?;
+    .map_err(|diags| {
+        tracer.suppress_warns(world);
+        deduplicate(diags)
+    })?;
 
     // Typeset the module's content, relayouting until convergence.
-    typeset(world, tracer, &module.content()).map_err(deduplicate)
+    let result = typeset(world, tracer, &module.content()).map_err(deduplicate);
+
+    tracer.suppress_warns(world);
+    result
 }
 
 /// Relayout until introspection converges.

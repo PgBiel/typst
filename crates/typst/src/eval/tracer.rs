@@ -1,11 +1,14 @@
+use comemo::Tracked;
 use std::collections::HashSet;
 
 use ecow::EcoVec;
+use typst_syntax::ast;
 
-use crate::diag::SourceDiagnostic;
+use crate::diag::{Severity, SourceDiagnostic};
 use crate::foundations::{Styles, Value};
 use crate::syntax::{FileId, Span};
 use crate::utils::hash128;
+use crate::World;
 
 /// Traces warnings and which values existed for an expression at a span.
 #[derive(Default, Clone)]
@@ -46,6 +49,10 @@ impl Tracer {
     pub fn values(self) -> EcoVec<(Value, Option<Styles>)> {
         self.values
     }
+
+    pub fn suppress_warns(&mut self, world: Tracked<dyn World + '_>) {
+        suppress(world, &mut self.warnings);
+    }
 }
 
 #[comemo::track]
@@ -79,4 +86,31 @@ impl Tracer {
             self.values.push((value, styles));
         }
     }
+}
+
+fn suppress(world: Tracked<dyn World + '_>, diags: &mut EcoVec<SourceDiagnostic>) {
+    diags.retain(|diag| {
+        if diag.severity == Severity::Warning {
+            // Ignore detached warnings
+            if let Some(file) = diag.span.id() {
+                // The source must exist if a warning occurred in the file.
+                let source = world.source(file).unwrap();
+                // The span must point to this source file.
+                let mut node = &source.find(diag.span).unwrap();
+
+                // Walk the parent nodes to check for a warning suppression.
+                while let Some(parent) = node.parent() {
+                    if let Some(allow_warning) = parent.cast::<ast::AllowWarning>() {
+                        if allow_warning.warning() == diag.message {
+                            // Suppress this warning.
+                            return false;
+                        }
+                    }
+                    node = parent;
+                }
+            }
+        }
+
+        true
+    });
 }
