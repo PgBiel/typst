@@ -50,8 +50,9 @@ impl Tracer {
         self.values
     }
 
+    /// Remove any suppressed warnings.
     pub fn suppress_warns(&mut self, world: Tracked<dyn World + '_>) {
-        suppress(world, &mut self.warnings);
+        suppress_warns(world, &mut self.warnings);
     }
 }
 
@@ -88,29 +89,47 @@ impl Tracer {
     }
 }
 
-fn suppress(world: Tracked<dyn World + '_>, diags: &mut EcoVec<SourceDiagnostic>) {
+fn suppress_warns(world: Tracked<dyn World + '_>, diags: &mut EcoVec<SourceDiagnostic>) {
     diags.retain(|diag| {
-        if diag.severity == Severity::Warning {
-            // Ignore detached warnings
-            if let Some(file) = diag.span.id() {
-                // The source must exist if a warning occurred in the file.
-                let source = world.source(file).unwrap();
-                // The span must point to this source file.
-                let mut node = &source.find(diag.span).unwrap();
+        // Only retain warnings which weren't locally suppressed where they
+        // were emitted or at any of their tracepoints.
+        diag.severity != Severity::Warning
+            || (!check_warning_suppressed(diag.span, world, &diag.message)
+                && !diag.trace.iter().any(|tracepoint| {
+                    check_warning_suppressed(tracepoint.span, world, &diag.message)
+                }))
+    });
+}
 
-                // Walk the parent nodes to check for a warning suppression.
-                while let Some(parent) = node.parent() {
-                    if let Some(allow_warning) = parent.cast::<ast::AllowWarning>() {
-                        if allow_warning.warning() == diag.message {
-                            // Suppress this warning.
-                            return false;
-                        }
-                    }
-                    node = parent;
-                }
+/// Checks if a given warning is suppressed given one span it has a tracepoint
+/// in. If there is one parent `allow("warning")` node containing this span
+/// in the same file, the warning is considered suppressed.
+fn check_warning_suppressed(
+    span: Span,
+    world: Tracked<dyn World + '_>,
+    message: &ecow::EcoString,
+) -> bool {
+    let Some(file) = span.id() else {
+        // Don't suppress detached warnings.
+        return false;
+    };
+
+    // The source must exist if a warning occurred in the file,
+    // or has a tracepoint in the file.
+    let source = world.source(file).unwrap();
+    // The span must point to this source file, so we unwrap.
+    let mut node = &source.find(span).unwrap();
+
+    // Walk the parent nodes to check for a warning suppression.
+    while let Some(parent) = node.parent() {
+        if let Some(allow_warning) = parent.cast::<ast::AllowWarning>() {
+            if allow_warning.warning() == *message {
+                // Suppress this warning.
+                return true;
             }
         }
+        node = parent;
+    }
 
-        true
-    });
+    false
 }
