@@ -35,10 +35,7 @@ impl Eval for ast::FuncCall<'_> {
         // If this is the first call in the call stack, prepare a buffer of
         // user warnings so that we may add tracepoints to them on each nested
         // call.
-        let is_top_call = vm.user_warns.is_none();
-        if is_top_call {
-            vm.user_warns = Some(vec![]);
-        }
+        let is_top_call = vm.engine.tracer.init_pending_warnings();
 
         // Try to evaluate as a call to an associated function or field.
         let (callee, mut args) =
@@ -59,7 +56,7 @@ impl Eval for ast::FuncCall<'_> {
                             let point = || Tracepoint::Call(Some(field.get().clone()));
                             let result = call_method_mut(target, &field, args, span)
                                 .trace(vm.world(), point, span);
-                            vm.trace_warns(point, span);
+                            vm.engine.tracer.trace_warns(point, span);
                             if is_top_call {
                                 vm.dump_warns();
                             }

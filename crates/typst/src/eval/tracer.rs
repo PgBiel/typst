@@ -1,19 +1,20 @@
 use comemo::Tracked;
 use std::collections::HashSet;
 
-use ecow::EcoVec;
+use ecow::{eco_vec, EcoVec};
 use typst_syntax::ast;
 
-use crate::diag::{Severity, SourceDiagnostic};
+use crate::diag::{Severity, SourceDiagnostic, Tracepoint};
 use crate::foundations::{Styles, Value};
 use crate::syntax::{FileId, Span};
 use crate::utils::hash128;
-use crate::World;
+use crate::{World, WorldExt};
 
 /// Traces warnings and which values existed for an expression at a span.
 #[derive(Default, Clone)]
 pub struct Tracer {
     inspected: Option<Span>,
+    pending_warnings: Option<EcoVec<SourceDiagnostic>>,
     warnings: EcoVec<SourceDiagnostic>,
     warnings_set: HashSet<u128>,
     delayed: EcoVec<SourceDiagnostic>,
@@ -63,6 +64,18 @@ impl Tracer {
         self.delayed.extend(errors);
     }
 
+    /// Pushes a warning to the list of pending warnings.
+    /// This is done so tracepoints can be added to it later.
+    /// However, if not currently inside a function call, the warning
+    /// is directly added to the tracer, as no tracepoints will be added.
+    pub fn warn_with_trace(&mut self, warning: SourceDiagnostic) {
+        if let Some(pending_warnings) = &mut self.pending_warnings {
+            pending_warnings.push(warning);
+        } else {
+            self.warn(warning);
+        }
+    }
+
     /// Add a warning.
     pub fn warn(&mut self, warning: SourceDiagnostic) {
         // Check if warning is a duplicate.
@@ -85,6 +98,44 @@ impl Tracer {
     pub fn value(&mut self, value: Value, styles: Option<Styles>) {
         if self.values.len() < Self::MAX_VALUES {
             self.values.push((value, styles));
+        }
+    }
+
+    /// Starts collecting pending warnings.
+    /// This is done at the topmost function call, so that we can add
+    /// tracepoints to upcoming warnings.
+    pub fn init_pending_warnings(&mut self) -> bool {
+        if self.pending_warnings.is_none() {
+            self.pending_warnings = Some(eco_vec![]);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Add a tracepoint to all pending warnings.
+    /// This is used when each function call is evaluated so we can generate a
+    /// stack trace for the warning.
+    pub fn trace_warnings(&mut self, world: Tracked<dyn World + '_>, span: Span) {
+        let make_point = todo!();
+        if let Some(pending_warnings) = &mut self.pending_warnings {
+            let Some(trace_range) = world.range(span) else {
+                return;
+            };
+            for warn in pending_warnings.make_mut() {
+                warn.trace(&trace_range, world, &make_point, span);
+            }
+        }
+    }
+
+    /// Consume any pending warnings.
+    /// Ensures the warnings will be recognized and displayed,
+    /// as we won't be adding any further stack traces.
+    pub fn flush_pending_warnings(&mut self) {
+        if let Some(pending_warnings) = self.pending_warnings.take() {
+            for warn in pending_warnings {
+                self.warn(warn);
+            }
         }
     }
 }
