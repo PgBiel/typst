@@ -1,5 +1,6 @@
-use comemo::{Tracked, TrackedMut};
+use comemo::{Track, Tracked, TrackedMut};
 use ecow::{eco_format, EcoVec};
+use typst_syntax::ast::Ident;
 
 use crate::diag::{bail, error, At, HintedStrResult, SourceResult, Trace, Tracepoint};
 use crate::engine::Engine;
@@ -291,6 +292,14 @@ pub(crate) fn call_closure(
     let mut scopes = Scopes::new(None);
     scopes.top = closure.captured.clone();
 
+    // Create an inner tracer so we can keep track of warnings raised due to
+    // this function call at any point, in order to add the relevant tracepoint
+    // to them. We also need a temporary tracer in order to be able to execute
+    // operations not tracked by comemo on it (in particular, trace warnings,
+    // as that require access to a `World` to work properly, which, among other
+    // things, doesn't play well with comemo).
+    let mut inner_tracer = Tracer::new();
+
     // Prepare the engine.
     let mut locator = Locator::chained(locator);
     let engine = Engine {
@@ -298,7 +307,7 @@ pub(crate) fn call_closure(
         introspector,
         route: Route::extend(route),
         locator: &mut locator,
-        tracer,
+        tracer: inner_tracer.track_mut(),
     };
 
     // Prepare VM.
@@ -359,9 +368,27 @@ pub(crate) fn call_closure(
     // Ensure all arguments have been used.
     args.finish()?;
 
+    let result = body.eval(&mut vm);
+
+    // Take the flow from the Vm early as we will use it later,
+    // but can't keep the Vm (and thus the Engine) borrowed
+    // in order to use the inner tracer again.
+    let flow = vm.flow;
+
+    // Add a tracepoint to all warnings which were raised during this call.
+    let point = || Tracepoint::Call(name.map(Ident::get).cloned());
+    inner_tracer.trace_warnings(world, point, closure.node.span());
+
+    // Dump warnings generated during this call into the outer tracer,
+    // as well as other tracer fields (bar `inspected`).
+    // This ensures they will be propagated upwards to the World.
+    inner_tracer.dump(tracer);
+
+    // After handling warnings, we may return errors.
+    let output = result?;
+
     // Handle control flow.
-    let output = body.eval(&mut vm)?;
-    match vm.flow {
+    match flow {
         Some(FlowEvent::Return(_, Some(explicit))) => return Ok(explicit),
         Some(FlowEvent::Return(_, None)) => {}
         Some(flow) => bail!(flow.forbidden()),
