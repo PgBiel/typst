@@ -72,10 +72,11 @@ pub use {
 
 use ecow::EcoString;
 
+use crate::diag::SourceDiagnostic;
 use crate::diag::{bail, SourceResult, StrResult};
 use crate::engine::Engine;
 use crate::eval::EvalMode;
-use crate::syntax::Spanned;
+use crate::syntax::{Span, Spanned};
 
 /// Foundational types and functions.
 ///
@@ -107,12 +108,28 @@ pub(super) fn define(global: &mut Scope, inputs: Dict) {
     global.define_type::<Version>();
     global.define_type::<Plugin>();
     global.define_func::<repr::repr>();
+    global.define_func::<warn>();
     global.define_func::<panic>();
     global.define_func::<assert>();
     global.define_func::<eval>();
     global.define_func::<style>();
     global.define_module(calc::module());
     global.define_module(sys::module(inputs));
+}
+
+/// Emits a warning to the user.
+#[func(keywords = ["warn"])]
+pub fn warn(
+    /// The engine.
+    engine: &mut Engine,
+
+    /// The span of the call, which is used as the warning's span.
+    span: Span,
+
+    /// The message to display alongside the warning.
+    message: EcoString,
+) {
+    engine.tracer.warn(SourceDiagnostic::warning(span, message));
 }
 
 /// Fails with an error.
