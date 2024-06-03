@@ -234,7 +234,7 @@ impl Display for Tracepoint {
 
 /// Enrich a [`SourceResult`] with a tracepoint.
 pub trait Trace<T> {
-    /// Add the tracepoint to all errors that lie outside the `span`.
+    /// Add the tracepoint to all diagnostics that lie outside the `span`.
     fn trace<F>(self, world: Tracked<dyn World + '_>, make_point: F, span: Span) -> Self
     where
         F: Fn() -> Tracepoint;
@@ -246,22 +246,36 @@ impl<T> Trace<T> for SourceResult<T> {
         F: Fn() -> Tracepoint,
     {
         self.map_err(|mut errors| {
-            let Some(trace_range) = world.range(span) else { return errors };
-            for error in errors.make_mut().iter_mut() {
-                // Skip traces that surround the error.
-                if let Some(error_range) = world.range(error.span) {
-                    if error.span.id() == span.id()
-                        && trace_range.start <= error_range.start
-                        && trace_range.end >= error_range.end
-                    {
-                        continue;
-                    }
-                }
-
-                error.trace.push(Spanned::new(make_point(), span));
-            }
+            trace_diagnostics(&mut errors, world, make_point, span);
             errors
         })
+    }
+}
+
+/// Add a tracepoint to all diagnostics that lie outside the `span`.
+pub fn trace_diagnostics<F>(
+    diagnostics: &mut EcoVec<SourceDiagnostic>,
+    world: Tracked<dyn World + '_>,
+    make_point: F,
+    span: Span,
+) where
+    F: Fn() -> Tracepoint,
+{
+    let Some(trace_range) = world.range(span) else {
+        return;
+    };
+    for error in diagnostics.make_mut().iter_mut() {
+        // Skip traces that surround the error.
+        if let Some(error_range) = world.range(error.span) {
+            if error.span.id() == span.id()
+                && trace_range.start <= error_range.start
+                && trace_range.end >= error_range.end
+            {
+                continue;
+            }
+        }
+
+        error.trace.push(Spanned::new(make_point(), span));
     }
 }
 

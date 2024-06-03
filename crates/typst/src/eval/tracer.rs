@@ -1,10 +1,10 @@
-use comemo::Tracked;
+use comemo::{Tracked, TrackedMut};
 use std::collections::HashSet;
 
 use ecow::EcoVec;
 use typst_syntax::ast;
 
-use crate::diag::{Severity, SourceDiagnostic};
+use crate::diag::{Severity, SourceDiagnostic, Tracepoint};
 use crate::foundations::{Styles, Value};
 use crate::syntax::{FileId, Span};
 use crate::utils::hash128;
@@ -29,6 +29,28 @@ impl Tracer {
         Self::default()
     }
 
+    /// Extend another tracer with this tracer's stored data.
+    /// The destination tracer's `inspected` field is not changed.
+    ///
+    /// This is used whenever a temporary tracer is needed in order to be able
+    /// to apply operations not tracked by comemo to the tracer. Then, this
+    /// function is called to merge the two tracers together, thus comemo
+    /// will only track (and replay, if needed) the `extend` operation,
+    /// which should be more viable to cache.
+    pub fn dump(self, mut destination: TrackedMut<Self>) {
+        for warning in self.warnings {
+            // Use 'warn()' to ensure we don't push duplicate warnings.
+            // This should also update 'warnings_set' accordingly.
+            destination.warn(warning);
+        }
+
+        destination.delay(self.delayed);
+
+        for (value, styles) in self.values {
+            destination.value(value, styles)
+        }
+    }
+
     /// Get the stored delayed errors.
     pub fn delayed(&mut self) -> EcoVec<SourceDiagnostic> {
         std::mem::take(&mut self.delayed)
@@ -48,6 +70,19 @@ impl Tracer {
     /// Get the values for the inspected span.
     pub fn values(self) -> EcoVec<(Value, Option<Styles>)> {
         self.values
+    }
+
+    /// Add a tracepoint to all traced warnings that lie outside the given
+    /// span.
+    pub fn trace_warnings<F>(
+        &mut self,
+        world: Tracked<dyn World + '_>,
+        make_point: F,
+        span: Span,
+    ) where
+        F: Fn() -> Tracepoint,
+    {
+        crate::diag::trace_diagnostics(&mut self.warnings, world, make_point, span);
     }
 
     /// Remove any suppressed warnings.
