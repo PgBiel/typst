@@ -32,111 +32,102 @@ impl Eval for ast::FuncCall<'_> {
             bail!(span, "maximum function call depth exceeded");
         }
 
-        // If this is the first call in the call stack, prepare a buffer of
-        // user warnings so that we may add tracepoints to them on each nested
-        // call.
-        let is_top_call = vm.engine.tracer.init_pending_warnings();
-
         // Try to evaluate as a call to an associated function or field.
-        let (callee, mut args) =
-            if let ast::Expr::FieldAccess(access) = callee {
-                let target = access.target();
-                let target_span = target.span();
-                let field = access.field();
-                let field_span = field.span();
+        let (callee, mut args) = if let ast::Expr::FieldAccess(access) = callee {
+            let target = access.target();
+            let target_span = target.span();
+            let field = access.field();
+            let field_span = field.span();
 
-                let target =
-                    if is_mutating_method(&field) {
-                        let mut args = args.eval(vm)?.spanned(span);
-                        let target = target.access(vm)?;
-
-                        // Only arrays and dictionaries have mutable methods.
-                        if matches!(target, Value::Array(_) | Value::Dict(_)) {
-                            args.span = span;
-                            let point = || Tracepoint::Call(Some(field.get().clone()));
-                            let result = call_method_mut(target, &field, args, span)
-                                .trace(vm.world(), point, span);
-                            vm.engine.tracer.trace_warns(point, span);
-                            if is_top_call {
-                                vm.dump_warns();
-                            }
-                            return result;
-                        }
-
-                        target.clone()
-                    } else {
-                        access.target().eval(vm)?
-                    };
-
+            let target = if is_mutating_method(&field) {
                 let mut args = args.eval(vm)?.spanned(span);
+                let target = target.access(vm)?;
 
-                // Handle plugins.
-                if let Value::Plugin(plugin) = &target {
-                    let bytes = args.all::<Bytes>()?;
-                    args.finish()?;
-                    return Ok(plugin.call(&field, bytes).at(span)?.into_value());
+                // Only arrays and dictionaries have mutable methods.
+                if matches!(target, Value::Array(_) | Value::Dict(_)) {
+                    args.span = span;
+                    let point = || Tracepoint::Call(Some(field.get().clone()));
+                    return call_method_mut(target, &field, args, span).trace(
+                        vm.world(),
+                        point,
+                        span,
+                    );
                 }
 
-                // Prioritize associated functions on the value's type (i.e.,
-                // methods) over its fields. A function call on a field is only
-                // allowed for functions, types, modules (because they are scopes),
-                // and symbols (because they have modifiers).
-                //
-                // For dictionaries, it is not allowed because it would be ambiguous
-                // (prioritizing associated functions would make an addition of a
-                // new associated function a breaking change and prioritizing fields
-                // would break associated functions for certain dictionaries).
-                if let Some(callee) = target.ty().scope().get(&field) {
-                    let this = Arg {
-                        span: target_span,
-                        name: None,
-                        value: Spanned::new(target, target_span),
-                    };
-                    args.span = span;
-                    args.items.insert(0, this);
-                    (callee.clone(), args)
-                } else if matches!(
-                    target,
-                    Value::Symbol(_) | Value::Func(_) | Value::Type(_) | Value::Module(_)
-                ) {
-                    (target.field(&field).at(field_span)?, args)
-                } else {
-                    let mut error = error!(
-                        field_span,
-                        "type {} has no method `{}`",
-                        target.ty(),
-                        field.as_str()
-                    );
+                target.clone()
+            } else {
+                access.target().eval(vm)?
+            };
 
-                    let mut field_hint = || {
-                        if target.field(&field).is_ok() {
+            let mut args = args.eval(vm)?.spanned(span);
+
+            // Handle plugins.
+            if let Value::Plugin(plugin) = &target {
+                let bytes = args.all::<Bytes>()?;
+                args.finish()?;
+                return Ok(plugin.call(&field, bytes).at(span)?.into_value());
+            }
+
+            // Prioritize associated functions on the value's type (i.e.,
+            // methods) over its fields. A function call on a field is only
+            // allowed for functions, types, modules (because they are scopes),
+            // and symbols (because they have modifiers).
+            //
+            // For dictionaries, it is not allowed because it would be ambiguous
+            // (prioritizing associated functions would make an addition of a
+            // new associated function a breaking change and prioritizing fields
+            // would break associated functions for certain dictionaries).
+            if let Some(callee) = target.ty().scope().get(&field) {
+                let this = Arg {
+                    span: target_span,
+                    name: None,
+                    value: Spanned::new(target, target_span),
+                };
+                args.span = span;
+                args.items.insert(0, this);
+                (callee.clone(), args)
+            } else if matches!(
+                target,
+                Value::Symbol(_) | Value::Func(_) | Value::Type(_) | Value::Module(_)
+            ) {
+                (target.field(&field).at(field_span)?, args)
+            } else {
+                let mut error = error!(
+                    field_span,
+                    "type {} has no method `{}`",
+                    target.ty(),
+                    field.as_str()
+                );
+
+                let mut field_hint = || {
+                    if target.field(&field).is_ok() {
+                        error.hint(eco_format!(
+                            "did you mean to access the field `{}`?",
+                            field.as_str()
+                        ));
+                    }
+                };
+
+                match target {
+                    Value::Dict(ref dict) => {
+                        if matches!(dict.get(&field), Ok(Value::Func(_))) {
                             error.hint(eco_format!(
-                                "did you mean to access the field `{}`?",
-                                field.as_str()
-                            ));
-                        }
-                    };
-
-                    match target {
-                        Value::Dict(ref dict) => {
-                            if matches!(dict.get(&field), Ok(Value::Func(_))) {
-                                error.hint(eco_format!(
                                 "to call the function stored in the dictionary, surround \
                                  the field access with parentheses, e.g. `(dict.{})(..)`",
                                field.as_str(),
                             ));
-                            } else {
-                                field_hint();
-                            }
+                        } else {
+                            field_hint();
                         }
-                        _ => field_hint(),
                     }
-
-                    bail!(error);
+                    _ => field_hint(),
                 }
-            } else {
-                (callee.eval(vm)?, args.eval(vm)?.spanned(span))
-            };
+
+                bail!(error);
+            }
+        } else {
+            (callee.eval(vm)?, args.eval(vm)?.spanned(span))
+        };
 
         // Handle math special cases for non-functions:
         // Combining accent symbols apply themselves while everything else
@@ -175,21 +166,9 @@ impl Eval for ast::FuncCall<'_> {
         let callee = callee.cast::<Func>().at(callee_span)?;
         let point = || Tracepoint::Call(callee.name().map(Into::into));
         let f = || {
-            let result = callee.call(&mut vm.engine, vm.context, args).trace(
-                vm.world(),
-                point,
-                span,
-            );
-
-            vm.trace_warns(point, span);
-            if is_top_call {
-                // That was the first call in the call stack,
-                // so we dump pending user warns into the tracer,
-                // as there are no tracepoints left to add to them.
-                vm.dump_warns();
-            }
-
-            result
+            callee
+                .call(&mut vm.engine, vm.context, args)
+                .trace(vm.world(), point, span)
         };
 
         // Stacker is broken on WASM.

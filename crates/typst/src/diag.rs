@@ -2,7 +2,6 @@
 
 use std::fmt::{self, Display, Formatter};
 use std::io;
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::str::Utf8Error;
 use std::string::FromUtf8Error;
@@ -178,29 +177,6 @@ impl SourceDiagnostic {
         self.hints.push(hint.into());
     }
 
-    /// Adds a single tracepoint to the diagnostic.
-    pub(crate) fn trace<F>(
-        &mut self,
-        trace_range: &Range<usize>,
-        world: Tracked<dyn World + '_>,
-        make_point: &F,
-        span: Span,
-    ) where
-        F: Fn() -> Tracepoint,
-    {
-        // Skip traces that surround the error.
-        if let Some(error_range) = world.range(self.span) {
-            if self.span.id() == span.id()
-                && trace_range.start <= error_range.start
-                && trace_range.end >= error_range.end
-            {
-                return;
-            }
-        }
-
-        self.trace.push(Spanned::new(make_point(), span));
-    }
-
     /// Adds a single hint to the diagnostic.
     pub fn with_hint(mut self, hint: impl Into<EcoString>) -> Self {
         self.hint(hint);
@@ -272,7 +248,17 @@ impl<T> Trace<T> for SourceResult<T> {
         self.map_err(|mut errors| {
             let Some(trace_range) = world.range(span) else { return errors };
             for error in errors.make_mut().iter_mut() {
-                error.trace(&trace_range, world, &make_point, span);
+                // Skip traces that surround the error.
+                if let Some(error_range) = world.range(error.span) {
+                    if error.span.id() == span.id()
+                        && trace_range.start <= error_range.start
+                        && trace_range.end >= error_range.end
+                    {
+                        continue;
+                    }
+                }
+
+                error.trace.push(Spanned::new(make_point(), span));
             }
             errors
         })
