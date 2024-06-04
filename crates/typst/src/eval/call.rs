@@ -168,7 +168,7 @@ impl Eval for ast::FuncCall<'_> {
         let point = || Tracepoint::Call(callee.name().map(Into::into));
         let f = || {
             callee
-                .call(&mut vm.engine, vm.context, args)
+                .spanned_call(&mut vm.engine, vm.context, span, args)
                 .trace(vm.world(), point, span)
         };
 
@@ -280,6 +280,7 @@ pub(crate) fn call_closure(
     locator: Tracked<Locator>,
     tracer: TrackedMut<Tracer>,
     context: Tracked<Context>,
+    caller_span: Option<Span>,
     mut args: Args,
 ) -> SourceResult<Value> {
     let (name, params, body) = match closure.node.cast::<ast::Closure>() {
@@ -376,8 +377,12 @@ pub(crate) fn call_closure(
     let flow = vm.flow;
 
     // Add a tracepoint to all warnings which were raised during this call.
-    let point = || Tracepoint::Call(name.map(Ident::get).cloned());
-    inner_tracer.trace_warnings(world, point, closure.node.span());
+    // This can only be done if we can point back to where the call occurred
+    // in the source code.
+    if let Some(caller_span) = caller_span {
+        let point = || Tracepoint::Call(name.map(Ident::get).cloned());
+        inner_tracer.trace_warnings(world, point, caller_span);
+    }
 
     // Dump warnings generated during this call into the outer tracer,
     // as well as other tracer fields (bar `inspected`).

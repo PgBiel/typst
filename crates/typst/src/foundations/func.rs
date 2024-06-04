@@ -270,7 +270,17 @@ impl Func {
         context: Tracked<Context>,
         args: A,
     ) -> SourceResult<Value> {
-        self.call_impl(engine, context, args.into_args(self.span))
+        self.call_impl(engine, context, None, args.into_args(self.span))
+    }
+
+    pub fn spanned_call<A: IntoArgs>(
+        &self,
+        engine: &mut Engine,
+        context: Tracked<Context>,
+        caller_span: Span,
+        args: A,
+    ) -> SourceResult<Value> {
+        self.call_impl(engine, context, Some(caller_span), args.into_args(self.span))
     }
 
     /// Non-generic implementation of `call`.
@@ -279,6 +289,7 @@ impl Func {
         &self,
         engine: &mut Engine,
         context: Tracked<Context>,
+        caller_span: Option<Span>,
         mut args: Args,
     ) -> SourceResult<Value> {
         match &self.repr {
@@ -301,6 +312,7 @@ impl Func {
                 engine.locator.track(),
                 TrackedMut::reborrow_mut(&mut engine.tracer),
                 context,
+                caller_span,
                 args,
             ),
             Repr::With(with) => {
