@@ -139,6 +139,10 @@ impl Lexer<'_> {
         }
     }
 
+    fn decorator(&mut self) -> SyntaxKind {
+        todo!()
+    }
+
     fn line_comment(&mut self) -> SyntaxKind {
         self.s.eat_until(is_newline);
         SyntaxKind::LineComment
