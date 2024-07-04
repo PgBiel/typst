@@ -25,8 +25,6 @@ use crate::model::{FootnoteElem, FootnoteEntry, Numbering, ParElem, ParLine};
 use crate::realize::StyleVec;
 use crate::utils::Numeric;
 
-use super::{Alignment, Length, Ratio};
-
 /// Arranges spacing, paragraphs and block-level elements into a flow.
 ///
 /// This element is responsible for layouting both the top-level content flow
@@ -178,6 +176,8 @@ enum FlowItem {
         float: bool,
         clearance: Abs,
     },
+    /// A line number, given its vertical distance from the top of the page.
+    LineNumber { frame: Frame, y: Abs },
     /// A footnote frame (can also be the separator).
     Footnote(Frame),
 }
@@ -536,6 +536,7 @@ impl<'a> FlowLayouter<'a> {
                     self.handle_par_lines(engine, &lines)?;
                 }
             }
+            FlowItem::LineNumber { .. } => {}
             FlowItem::Footnote(_) => {}
         }
 
@@ -601,6 +602,8 @@ impl<'a> FlowLayouter<'a> {
                     first_footnote = false;
                     used.x.set_max(frame.width());
                 }
+                // Line numbers are absolutely positioned
+                FlowItem::LineNumber { .. } => {}
             }
         }
         used.y += footnote_height + float_top_height + float_bottom_height;
@@ -669,6 +672,9 @@ impl<'a> FlowLayouter<'a> {
                         + delta.zip_map(size, Rel::relative_to).to_point();
 
                     output.push_frame(pos, frame);
+                }
+                FlowItem::LineNumber { frame, y } => {
+                    output.push_frame(Point::new(Abs::cm(-1.0), y), frame);
                 }
                 FlowItem::Footnote(frame) => {
                     let y = size.y - footnote_height + footnote_offset;
@@ -912,23 +918,23 @@ impl FlowLayouter<'_> {
             &Numbering::Pattern("1".parse().unwrap()),
         )?;
 
-        // TODO: Handle line numbers as separate flow items
-        self.layout_placed(
-            engine,
-            &Packed::new(
-                PlaceElem::new(
-                    SequenceElem::new(vec![line_counter_update, line_counter_display])
-                        .pack(),
-                )
-                .with_alignment(Smart::Custom(Alignment::Both(
-                    super::HAlignment::Start,
-                    super::VAlignment::Top,
-                )))
-                .with_dx(Rel::new(Ratio::zero(), Length::from(Abs::cm(-1.0))))
-                .with_dy(Rel::new(Ratio::zero(), Length::from(y))),
-            ),
-            self.styles,
-        )?;
+        let line_number =
+            SequenceElem::new(vec![line_counter_update, line_counter_display]);
+
+        let locator = self.locator.next(&line_number);
+
+        // TODO: infinite region?
+        let frame = line_number
+            .pack()
+            .layout(
+                engine,
+                locator,
+                self.styles,
+                Regions::one(Axes::splat(Abs::inf()), Axes::splat(false)),
+            )?
+            .into_frame();
+
+        self.layout_item(engine, FlowItem::LineNumber { frame, y })?;
 
         Ok(())
     }
