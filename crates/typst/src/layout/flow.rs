@@ -13,7 +13,8 @@ use typst_utils::NonZeroExt;
 use crate::diag::{bail, SourceResult};
 use crate::engine::Engine;
 use crate::foundations::{
-    elem, Args, Construct, Content, NativeElement, Packed, Resolve, Smart, StyleChain,
+    elem, Args, Construct, Content, NativeElement, Packed, Resolve, SequenceElem, Smart,
+    StyleChain,
 };
 use crate::introspection::{Counter, CounterUpdate, Locator, SplitLocator, Tag, TagElem};
 use crate::layout::{
@@ -315,46 +316,6 @@ impl<'a> FlowLayouter<'a> {
                 self.layout_item(engine, FlowItem::Absolute(leading, true))?;
             }
 
-            if self.root {
-                let line_counter = Counter::of(ParLine::elem());
-                let mut line_counter_update = line_counter
-                    .clone()
-                    .update(Span::detached(), CounterUpdate::Step(NonZeroUsize::ONE));
-
-                let update_hash = crate::utils::hash128(&line_counter_update);
-                let location =
-                    self.locator.next_location(engine.introspector, update_hash);
-                line_counter_update.set_location(location);
-
-                let locator = self.locator.next(&update_hash);
-                let counter_update =
-                    line_counter_update.layout(engine, locator, styles, self.regions)?;
-
-                for subframe in counter_update {
-                    frame.prepend_frame(Point::zero(), subframe);
-                }
-
-                let line_counter_display = line_counter.display_at_loc(
-                    engine,
-                    location,
-                    styles,
-                    &Numbering::Pattern("1".parse().unwrap()),
-                )?;
-
-                self.layout_placed(
-                    engine,
-                    &Packed::new(
-                        PlaceElem::new(line_counter_display)
-                            .with_alignment(Smart::Custom(Alignment::START))
-                            .with_dx(Rel::new(
-                                Ratio::zero(),
-                                Length::from(Abs::cm(-1.0)),
-                            )),
-                    ),
-                    styles,
-                )?;
-            }
-
             self.drain_tag(&mut frame);
             self.layout_item(
                 engine,
@@ -398,10 +359,16 @@ impl<'a> FlowLayouter<'a> {
         let align = AlignElem::alignment_in(styles).resolve(styles);
 
         let mut notes = Vec::new();
+        let mut lines = Vec::new();
         for (i, mut frame) in fragment.into_iter().enumerate() {
             // Find footnotes in the frame.
             if self.root {
                 find_footnotes(&mut notes, &frame);
+
+                find_lines(&mut lines, &frame);
+                // Handle on each region
+                self.handle_par_lines(engine, &lines)?;
+                lines.clear();
             }
 
             if i > 0 {
@@ -491,21 +458,28 @@ impl<'a> FlowLayouter<'a> {
 
                 let in_last = self.regions.in_last();
                 self.regions.size.y -= height;
-                if self.root && movable {
-                    let mut notes = Vec::new();
-                    find_footnotes(&mut notes, frame);
-                    self.items.push(item);
+                if self.root {
+                    let mut lines = Vec::new();
+                    find_lines(&mut lines, frame);
+                    if movable {
+                        let mut notes = Vec::new();
+                        find_footnotes(&mut notes, frame);
+                        self.items.push(item);
 
-                    // When we are already in_last, we can directly force the
-                    // footnotes.
-                    if !self.handle_footnotes(engine, &mut notes, true, in_last)? {
-                        let item = self.items.pop();
-                        self.finish_region(engine, false)?;
-                        self.items.extend(item);
-                        self.regions.size.y -= height;
-                        self.handle_footnotes(engine, &mut notes, true, true)?;
+                        // When we are already in_last, we can directly force the
+                        // footnotes.
+                        if !self.handle_footnotes(engine, &mut notes, true, in_last)? {
+                            let item = self.items.pop();
+                            self.finish_region(engine, false)?;
+                            self.items.extend(item);
+                            self.regions.size.y -= height;
+                            self.handle_footnotes(engine, &mut notes, true, true)?;
+                        }
+                        self.handle_par_lines(engine, &lines)?;
+                        return Ok(());
                     }
-                    return Ok(());
+
+                    self.handle_par_lines(engine, &lines)?;
                 }
             }
             FlowItem::Placed { float: false, .. } => {}
@@ -548,11 +522,18 @@ impl<'a> FlowLayouter<'a> {
 
                 self.regions.size.y -= frame.height();
 
-                // Find footnotes in the frame.
+                // Find lines and footnotes in the frame.
                 if self.root {
                     let mut notes = vec![];
                     find_footnotes(&mut notes, frame);
                     self.try_handle_footnotes(engine, notes)?;
+
+                    // This won't be infinitely recursive as
+                    // line numbers aren't floating placed elements,
+                    // so they are out of flow.
+                    let mut lines = Vec::new();
+                    find_lines(&mut lines, frame);
+                    self.handle_par_lines(engine, &lines)?;
                 }
             }
             FlowItem::Footnote(_) => {}
@@ -772,6 +753,41 @@ impl FlowLayouter<'_> {
         Ok(())
     }
 
+    /// Processes all paragraph lines in the frame, displaying line numbers.
+    /// This should only be run in the root flow.
+    fn handle_par_lines(
+        &mut self,
+        engine: &mut Engine,
+        lines: &[Packed<ParLine>],
+    ) -> SourceResult<()> {
+        // TODO: don't do this
+        let mut lines: Vec<Abs> = lines
+            .iter()
+            .map(|line| line.location().unwrap().position(engine).point.y)
+            .collect();
+        lines.sort();
+
+        const LINE_DISTANCE_THRESHOLD: Abs = Abs::raw(1.0);
+
+        let mut prev_y = None;
+        for line_y in lines {
+            if prev_y
+                .is_some_and(|prev_y| (line_y - prev_y).abs() < LINE_DISTANCE_THRESHOLD)
+            {
+                // Lines are too close together. Display as the same line number.
+                continue;
+            }
+
+            // Note that line_y > prev_y due to sorting.
+            // Therefore, the check above ensures no lines too close together
+            // will cause too many different line numbers to appear.
+            prev_y = Some(line_y);
+            self.layout_line_number(engine)?;
+        }
+
+        Ok(())
+    }
+
     /// Processes all footnotes in the frame.
     ///
     /// Returns true if the footnote entries fit in the allotted
@@ -869,6 +885,49 @@ impl FlowLayouter<'_> {
 
         Ok(())
     }
+
+    fn layout_line_number(&mut self, engine: &mut Engine) -> SourceResult<()> {
+        let line_counter = Counter::of(ParLine::elem());
+        let mut line_counter_update = line_counter
+            .clone()
+            .update(Span::detached(), CounterUpdate::Step(NonZeroUsize::ONE));
+
+        let update_hash = crate::utils::hash128(&line_counter_update);
+        let location = self.locator.next_location(engine.introspector, update_hash);
+        line_counter_update.set_location(location);
+
+        // let locator = self.locator.next(&update_hash);
+        // let counter_update =
+        //     line_counter_update.layout(engine, locator, styles, self.regions)?;
+
+        // let frame;
+        // for subframe in counter_update {
+        //     frame.prepend_frame(Point::zero(), subframe);
+        // }
+
+        let line_counter_display = line_counter.display_at_loc(
+            engine,
+            location,
+            self.styles,
+            &Numbering::Pattern("1".parse().unwrap()),
+        )?;
+
+        // TODO: Handle line numbers as separate flow items
+        self.layout_placed(
+            engine,
+            &Packed::new(
+                PlaceElem::new(
+                    SequenceElem::new(vec![line_counter_update, line_counter_display])
+                        .pack(),
+                )
+                .with_alignment(Smart::Custom(Alignment::START))
+                .with_dx(Rel::new(Ratio::zero(), Length::from(Abs::cm(-1.0)))),
+            ),
+            self.styles,
+        )?;
+
+        Ok(())
+    }
 }
 
 /// Finds all footnotes in the frame.
@@ -883,6 +942,25 @@ fn find_footnotes(notes: &mut Vec<Packed<FootnoteElem>>, frame: &Frame) {
                     continue;
                 };
                 notes.push(footnote.clone());
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Finds all numbered paragraph lines in the frame.
+fn find_lines(lines: &mut Vec<Packed<ParLine>>, frame: &Frame) {
+    for (_, item) in frame.items() {
+        match item {
+            FrameItem::Group(group) => find_lines(lines, &group.frame),
+            FrameItem::Tag(tag)
+                if !lines.iter().any(|line| line.location() == tag.elem.location()) =>
+            {
+                let Some(line) = tag.elem.to_packed::<ParLine>() else {
+                    continue;
+                };
+
+                lines.push(line.clone());
             }
             _ => {}
         }
