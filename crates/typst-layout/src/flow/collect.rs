@@ -103,69 +103,32 @@ impl<'a> Collector<'a, '_, '_> {
     }
 
     /// Collect a paragraph into [`LineChild`]ren. This already performs line
-    /// layout since it is not dependent on the concrete regions.
+    /// layout as an optimization since it usually is not dependent on the concrete
+    /// regions. When it is (which can occur in the presence of collision), the
+    /// laid out lines are discarded.
     fn par(
         &mut self,
         elem: &'a Packed<ParElem>,
         styles: StyleChain<'a>,
     ) -> SourceResult<()> {
-        let align = AlignElem::alignment_in(styles).resolve(styles);
-        let leading = ParElem::leading_in(styles);
         let spacing = ParElem::spacing_in(styles);
-        let costs = TextElem::costs_in(styles);
+        self.output.push(Child::Rel(spacing.into(), 4));
 
-        let lines = crate::layout_inline(
+        let lines = layout_par(
             self.engine,
-            &elem.children,
+            elem,
             self.locator.next(&elem.span()),
-            styles,
             self.last_was_par,
             self.base,
             self.expand,
-        )?
-        .into_frames();
+            styles,
+        )?;
 
-        self.output.push(Child::Rel(spacing.into(), 4));
-
-        // Determine whether to prevent widow and orphans.
-        let len = lines.len();
-        let prevent_orphans =
-            costs.orphan() > Ratio::zero() && len >= 2 && !lines[1].is_empty();
-        let prevent_widows =
-            costs.widow() > Ratio::zero() && len >= 2 && !lines[len - 2].is_empty();
-        let prevent_all = len == 3 && prevent_orphans && prevent_widows;
-
-        // Store the heights of lines at the edges because we'll potentially
-        // need these later when `lines` is already moved.
-        let height_at = |i| lines.get(i).map(Frame::height).unwrap_or_default();
-        let front_1 = height_at(0);
-        let front_2 = height_at(1);
-        let back_2 = height_at(len.saturating_sub(2));
-        let back_1 = height_at(len.saturating_sub(1));
-
-        for (i, frame) in lines.into_iter().enumerate() {
-            if i > 0 {
-                self.output.push(Child::Rel(leading.into(), 5));
-            }
-
-            // To prevent widows and orphans, we require enough space for
-            // - all lines if it's just three
-            // - the first two lines if we're at the first line
-            // - the last two lines if we're at the second to last line
-            let need = if prevent_all && i == 0 {
-                front_1 + leading + front_2 + leading + back_1
-            } else if prevent_orphans && i == 0 {
-                front_1 + leading + front_2
-            } else if prevent_widows && i >= 2 && i + 2 == len {
-                back_2 + leading + back_1
-            } else {
-                frame.height()
-            };
-
-            self.output
-                .push(Child::Line(self.boxed(LineChild { frame, align, need })));
-        }
-
+        self.output.push(Child::Par(self.boxed(ParChild {
+            consecutive: self.last_was_par,
+            styles,
+            lines,
+        })));
         self.output.push(Child::Rel(spacing.into(), 4));
         self.last_was_par = true;
 
@@ -294,8 +257,8 @@ pub enum Child<'a> {
     Rel(Rel<Abs>, u8),
     /// Fractional spacing.
     Fr(Fr),
-    /// An already layouted line of a paragraph.
-    Line(BumpBox<'a, LineChild>),
+    /// A paragraph.
+    Par(BumpBox<'a, ParChild<'a>>),
     /// An unbreakable block.
     Single(BumpBox<'a, SingleChild<'a>>),
     /// A breakable block.
@@ -308,12 +271,95 @@ pub enum Child<'a> {
     Break(bool),
 }
 
+/// A child containing all information needed to layout a paragraph mid-flow.
+///
+/// This information is obtained during collection.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct ParChild<'a> {
+    /// Whether this was a consecutive paragraph in the flow.
+    pub consecutive: bool,
+
+    /// The styles at the paragraph's location.
+    pub styles: StyleChain<'a>,
+
+    /// Pre-processed lines to be used if there are no colliders, avoiding the
+    /// need for relayouting the paragraph.
+    pub lines: Vec<LineChild>,
+}
+
 /// A child that encapsulates a layouted line of a paragraph.
 #[derive(Debug)]
 pub struct LineChild {
     pub frame: Frame,
     pub align: Axes<FixedAlignment>,
     pub need: Abs,
+}
+
+/// Layout a paragraph into [`LineChild`]ren for usage in the flow.
+///
+/// Uses leading, spacing and other values from the given styles. Ensure the
+/// same values are used when using the laid out children.
+pub(crate) fn layout_par<'a>(
+    engine: &mut Engine,
+    elem: &'a Packed<ParElem>,
+    locator: Locator,
+    consecutive: bool,
+    region: Size,
+    expand: bool,
+    styles: StyleChain<'a>,
+) -> SourceResult<Vec<LineChild>> {
+    let align = AlignElem::alignment_in(styles).resolve(styles);
+    let leading = ParElem::leading_in(styles);
+    let costs = TextElem::costs_in(styles);
+
+    let lines = crate::layout_inline(
+        engine,
+        &elem.children,
+        locator,
+        styles,
+        consecutive,
+        region,
+        expand,
+    )?
+    .into_frames();
+
+    // Determine whether to prevent widow and orphans.
+    let len = lines.len();
+    let prevent_orphans =
+        costs.orphan() > Ratio::zero() && len >= 2 && !lines[1].is_empty();
+    let prevent_widows =
+        costs.widow() > Ratio::zero() && len >= 2 && !lines[len - 2].is_empty();
+    let prevent_all = len == 3 && prevent_orphans && prevent_widows;
+
+    // Store the heights of lines at the edges because we'll potentially
+    // need these later when `lines` is already moved.
+    let height_at = |i| lines.get(i).map(Frame::height).unwrap_or_default();
+    let front_1 = height_at(0);
+    let front_2 = height_at(1);
+    let back_2 = height_at(len.saturating_sub(2));
+    let back_1 = height_at(len.saturating_sub(1));
+
+    let mut output: Vec<LineChild> = vec![];
+    for (i, frame) in lines.into_iter().enumerate() {
+        // To prevent widows and orphans, we require enough space for
+        // - all lines if it's just three
+        // - the first two lines if we're at the first line
+        // - the last two lines if we're at the second to last line
+        let need = if prevent_all && i == 0 {
+            front_1 + leading + front_2 + leading + back_1
+        } else if prevent_orphans && i == 0 {
+            front_1 + leading + front_2
+        } else if prevent_widows && i >= 2 && i + 2 == len {
+            back_2 + leading + back_1
+        } else {
+            frame.height()
+        };
+
+        output.push(LineChild { frame, align, need });
+    }
+
+    Ok(output)
 }
 
 /// A child that encapsulates a prepared unbreakable block.

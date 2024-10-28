@@ -2,8 +2,10 @@ use typst_library::introspection::Tag;
 use typst_library::layout::{
     Abs, Axes, FixedAlignment, Fr, Frame, FrameItem, Point, Region, Regions, Rel, Size,
 };
+use typst_library::model::ParElem;
 use typst_utils::Numeric;
 
+use super::collect::ParChild;
 use super::{
     Child, Composer, FlowResult, LineChild, MultiChild, MultiSpill, PlacedChild,
     SingleChild, Stop, Work,
@@ -132,7 +134,7 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
             Child::Tag(tag) => self.tag(tag),
             Child::Rel(amount, weakness) => self.rel(*amount, *weakness),
             Child::Fr(fr) => self.fr(*fr),
-            Child::Line(line) => self.line(line)?,
+            Child::Par(par) => self.par(par)?,
             Child::Single(single) => self.single(single)?,
             Child::Multi(multi) => self.multi(multi)?,
             Child::Placed(placed) => self.placed(placed)?,
@@ -220,6 +222,23 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
             }
         }
         Abs::zero()
+    }
+
+    /// Processes a paragraph, possibly laying it out again if necessary
+    /// (which could be due to collision).
+    fn par(&mut self, par: &'b ParChild<'a>) -> FlowResult<()> {
+        let leading = ParElem::leading_in(par.styles);
+
+        let mut first = true;
+        for line in &par.lines {
+            if !first {
+                self.rel(leading.into(), 5);
+            }
+            self.line(line)?;
+            first = false;
+        }
+
+        Ok(())
     }
 
     /// Processes a line of a paragraph.
