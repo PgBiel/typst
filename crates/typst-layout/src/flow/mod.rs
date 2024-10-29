@@ -12,6 +12,7 @@ use std::num::NonZeroUsize;
 use std::rc::Rc;
 
 use bumpalo::Bump;
+use collect::Spill;
 use comemo::{Track, Tracked, TrackedMut};
 use ecow::EcoVec;
 use typst_library::diag::{bail, At, SourceDiagnostic, SourceResult};
@@ -256,8 +257,8 @@ pub(crate) fn layout_flow(
 struct Work<'a, 'b> {
     /// Children that we haven't processed yet. This slice shrinks over time.
     children: &'b [Child<'a>],
-    /// Leftovers from a breakable block.
-    spill: Option<MultiSpill<'a, 'b>>,
+    /// Leftovers from a breakable block or paragraph.
+    spill: Option<Spill<'a, 'b>>,
     /// Queued floats that didn't fit in previous regions.
     floats: EcoVec<&'b PlacedChild<'a>>,
     /// Queued footnotes that didn't fit in previous regions.

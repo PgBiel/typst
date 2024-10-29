@@ -527,6 +527,25 @@ fn layout_multi_impl(
     })
 }
 
+/// Either of the possible kinds of spilled remains from flow elements being
+/// broken apart across regions. This information is carried over to the next
+/// region to continue layout.
+#[derive(Debug, Clone)]
+pub enum Spill<'a, 'b> {
+    Par(ParSpill<'a, 'b>),
+    Multi(MultiSpill<'a, 'b>),
+}
+
+/// The spilled remains of a `ParChild` whose lines were broken across two
+/// regions.
+#[derive(Debug, Clone)]
+pub struct ParSpill<'a, 'b> {
+    /// Paragraph currently being laid out.
+    pub par: &'b ParChild<'a>,
+    /// Remaining lines to layout.
+    pub lines: &'b [LineChild],
+}
+
 /// The spilled remains of a `MultiChild` that broke across two regions.
 #[derive(Debug, Clone)]
 pub struct MultiSpill<'a, 'b> {

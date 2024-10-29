@@ -5,7 +5,7 @@ use typst_library::layout::{
 use typst_library::model::ParElem;
 use typst_utils::Numeric;
 
-use super::collect::ParChild;
+use super::collect::{ParChild, ParSpill, Spill};
 use super::{
     Child, Composer, FlowResult, LineChild, MultiChild, MultiSpill, PlacedChild,
     SingleChild, Stop, Work,
@@ -109,7 +109,10 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
     fn run(&mut self) -> FlowResult<()> {
         // First, handle spill of a breakable block.
         if let Some(spill) = self.composer.work.spill.take() {
-            self.multi_spill(spill)?;
+            match spill {
+                Spill::Multi(spill) => self.multi_spill(spill)?,
+                Spill::Par(spill) => self.par_spill(spill)?,
+            };
         }
 
         // If spill are taken care of, process children until no space is left
@@ -230,11 +233,53 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
         let leading = ParElem::leading_in(par.styles);
 
         let mut first = true;
-        for line in &par.lines {
+        for (i, line) in par.lines.iter().enumerate() {
             if !first {
                 self.rel(leading.into(), 5);
             }
-            self.line(line)?;
+
+            match self.line(line) {
+                Ok(_) => {}
+                err @ Err(Stop::Finish(_)) => {
+                    // Ensure the next region starts at the line where we
+                    // stopped.
+                    let spill = ParSpill { par, lines: &par.lines[i..] };
+                    self.composer.work.spill = Some(Spill::Par(spill));
+                    self.composer.work.advance();
+                    return err;
+                }
+                err => return err,
+            }
+
+            first = false;
+        }
+
+        Ok(())
+    }
+
+    /// Processes a paragraph, possibly laying it out again if necessary
+    /// (which could be due to collision).
+    fn par_spill(&mut self, spill: ParSpill<'a, 'b>) -> FlowResult<()> {
+        let leading = ParElem::leading_in(spill.par.styles);
+
+        let mut first = true;
+        for (i, line) in spill.lines.iter().enumerate() {
+            if !first {
+                self.rel(leading.into(), 5);
+            }
+
+            match self.line(line) {
+                Ok(_) => {}
+                err @ Err(Stop::Finish(_)) => {
+                    // Ensure the next region starts at the line where we
+                    // stopped.
+                    let spill = ParSpill { par: spill.par, lines: &spill.lines[i..] };
+                    self.composer.work.spill = Some(Spill::Par(spill));
+                    return err;
+                }
+                err => return err,
+            }
+
             first = false;
         }
 
@@ -307,7 +352,7 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
         // If the block didn't fully fit into the current region, save it into
         // the `spill` and finish the region.
         if let Some(spill) = spill {
-            self.composer.work.spill = Some(spill);
+            self.composer.work.spill = Some(Spill::Multi(spill));
             self.composer.work.advance();
             return Err(Stop::Finish(false));
         }
@@ -319,7 +364,7 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
     fn multi_spill(&mut self, spill: MultiSpill<'a, 'b>) -> FlowResult<()> {
         // Skip directly if the region is already (over)full.
         if self.regions.is_full() {
-            self.composer.work.spill = Some(spill);
+            self.composer.work.spill = Some(Spill::Multi(spill));
             return Err(Stop::Finish(false));
         }
 
@@ -331,7 +376,7 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
         // If there's still more, save it into the `spill` and finish the
         // region.
         if let Some(spill) = spill {
-            self.composer.work.spill = Some(spill);
+            self.composer.work.spill = Some(Spill::Multi(spill));
             return Err(Stop::Finish(false));
         }
 
