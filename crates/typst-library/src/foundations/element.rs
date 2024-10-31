@@ -331,3 +331,43 @@ pub trait ShowSet {
     /// that should work even in the face of a user-defined show rule.
     fn show_set(&self, styles: StyleChain) -> Styles;
 }
+
+#[macro_export]
+macro_rules! _element {
+    (heading) => {
+        $crate::model::HeadingElem
+    };
+    (par) => {
+        $crate::model::ParElem
+    };
+    ($x:tt) => {
+        $x
+    };
+}
+
+#[macro_export]
+macro_rules! _kebab {
+    ($name:ident) => { $name };
+    ($name:ident$(-$cont:ident)+) => {
+        paste::paste! {
+            [<$name $(_$cont)+>]
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! style {
+    ($(set $name:ident($($field:ident$(-$field_cont:ident)*: $value:expr),*))*) => {
+        {
+            let mut style = $crate::foundations::Styles::new();
+            paste::paste! {
+                $(
+                    $(
+                        style.set(<$crate::_element!($name)>::[<set_ $field $(_$field_cont)*>]($value));
+                    )*
+                )*
+            }
+            style
+        }
+    }
+}

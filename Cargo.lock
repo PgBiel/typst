@@ -2865,6 +2865,7 @@ dependencies = [
  "kurbo",
  "lipsum",
  "palette",
+ "paste",
  "phf",
  "png",
  "qcms",

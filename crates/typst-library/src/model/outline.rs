@@ -262,11 +262,15 @@ impl Show for Packed<OutlineElem> {
 
 impl ShowSet for Packed<OutlineElem> {
     fn show_set(&self, _: StyleChain) -> Styles {
-        let mut out = Styles::new();
-        out.set(HeadingElem::set_outlined(false));
-        out.set(HeadingElem::set_numbering(None));
-        out.set(ParElem::set_first_line_indent(Em::new(0.0).into()));
-        out
+        // let mut out = Styles::new();
+        // out.set(HeadingElem::set_outlined(false));
+        // out.set(HeadingElem::set_numbering(None));
+        // out.set(ParElem::set_first_line_indent(Em::new(0.0).into()));
+        // out
+        crate::style! {
+            set heading(outlined: false, numbering: None)
+            set par(first-line-indent: Em::new(0.0).into())
+        }
     }
 }
 
