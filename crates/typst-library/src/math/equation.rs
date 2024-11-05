@@ -175,20 +175,34 @@ impl Show for Packed<EquationElem> {
 
 impl ShowSet for Packed<EquationElem> {
     fn show_set(&self, styles: StyleChain) -> Styles {
-        let mut out = Styles::new();
-        if self.block(styles) {
-            out.set(AlignElem::set_alignment(Alignment::CENTER));
-            out.set(BlockElem::set_breakable(false));
-            out.set(ParLine::set_numbering(None));
-            out.set(EquationElem::set_size(MathSize::Display));
-        } else {
-            out.set(EquationElem::set_size(MathSize::Text));
+        // let mut out = Styles::new();
+        // if self.block(styles) {
+        //     out.set(AlignElem::set_alignment(Alignment::CENTER));
+        //     out.set(BlockElem::set_breakable(false));
+        //     out.set(ParLine::set_numbering(None));
+        //     out.set(EquationElem::set_size(MathSize::Display));
+        // } else {
+        //     out.set(EquationElem::set_size(MathSize::Text));
+        // }
+        // out.set(TextElem::set_weight(FontWeight::from_number(450)));
+        // out.set(TextElem::set_font(FontList(vec![FontFamily::new(
+        //     "New Computer Modern Math",
+        // )])));
+        // out
+        let is_block = self.block(styles);
+        crate::style! {
+            set align(alignment: Alignment::CENTER) if is_block
+            set block(breakable: false) if is_block
+            set ParLine(numbering: None) if is_block
+            set equation(size: MathSize::Display) if is_block
+            set equation(size: MathSize::Text) if !is_block
+            set text(
+                weight: FontWeight::from_number(450),
+                font: FontList(vec![FontFamily::new(
+                    "New Computer Modern Math",
+                )])
+            )
         }
-        out.set(TextElem::set_weight(FontWeight::from_number(450)));
-        out.set(TextElem::set_font(FontList(vec![FontFamily::new(
-            "New Computer Modern Math",
-        )])));
-        out
     }
 }
 

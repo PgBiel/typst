@@ -340,6 +340,9 @@ macro_rules! _element {
     (block) => {
         $crate::layout::BlockElem
     };
+    (equation) => {
+        $crate::math::EquationElem
+    };
     (heading) => {
         $crate::model::HeadingElem
     };
@@ -369,15 +372,17 @@ macro_rules! _kebab {
 
 #[macro_export]
 macro_rules! style {
-    ($(set $name:ident($($field:ident$(-$field_cont:ident)*: $value:expr),*))*) => {
+    ($(set $name:ident($($field:ident$(-$field_cont:ident)*: $value:expr),*) $(if $cond:expr)?)*) => {
         {
             #[allow(unused_mut)]
             let mut style = $crate::foundations::Styles::new();
             paste::paste! {
                 $(
-                    $(
-                        style.set(<$crate::_element!($name)>::[<set_ $field $(_$field_cont)*>]($value));
-                    )*
+                    $(if $cond)? {
+                        $(
+                            style.set(<$crate::_element!($name)>::[<set_ $field $(_$field_cont)*>]($value));
+                        )*
+                    }
                 )*
             }
             style

@@ -466,16 +466,26 @@ impl Show for Packed<RawElem> {
 
 impl ShowSet for Packed<RawElem> {
     fn show_set(&self, styles: StyleChain) -> Styles {
-        let mut out = Styles::new();
-        out.set(TextElem::set_overhang(false));
-        out.set(TextElem::set_lang(Lang::ENGLISH));
-        out.set(TextElem::set_hyphenate(Hyphenate(Smart::Custom(false))));
-        out.set(TextElem::set_size(TextSize(Em::new(0.8).into())));
-        out.set(TextElem::set_font(FontList(vec![FontFamily::new("DejaVu Sans Mono")])));
-        if self.block(styles) {
-            out.set(ParElem::set_justify(false));
+        // let mut out = Styles::new();
+        // out.set(TextElem::set_overhang(false));
+        // out.set(TextElem::set_lang(Lang::ENGLISH));
+        // out.set(TextElem::set_hyphenate(Hyphenate(Smart::Custom(false))));
+        // out.set(TextElem::set_size(TextSize(Em::new(0.8).into())));
+        // out.set(TextElem::set_font(FontList(vec![FontFamily::new("DejaVu Sans Mono")])));
+        // if self.block(styles) {
+        //     out.set(ParElem::set_justify(false));
+        // }
+        // out
+        crate::style! {
+            set text(
+                overhang: false,
+                lang: Lang::ENGLISH,
+                hyphenate: Hyphenate(Smart::Custom(false)),
+                size: TextSize(Em::new(0.8).into()),
+                font: FontList(vec![FontFamily::new("DejaVu Sans Mono")])
+            )
+            set par(justify: false) if self.block(styles)
         }
-        out
     }
 }
 
