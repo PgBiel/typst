@@ -11,8 +11,8 @@ use crate::foundations::{
 };
 use crate::introspection::{Count, Counter, CounterUpdate, Locatable, Location};
 use crate::layout::{Abs, Em, HElem, Length, Ratio};
-use crate::model::{Destination, Numbering, NumberingPattern, ParElem};
-use crate::text::{SuperElem, TextElem, TextSize};
+use crate::model::{Destination, Numbering, NumberingPattern};
+use crate::text::{SuperElem, TextSize};
 use crate::visualize::{LineElem, Stroke};
 
 /// A footnote.

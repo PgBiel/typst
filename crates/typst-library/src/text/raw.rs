@@ -17,7 +17,7 @@ use crate::foundations::{
     PlainText, Show, ShowSet, Smart, StyleChain, Styles, Synthesize, Value,
 };
 use crate::layout::{BlockBody, BlockElem, Em, HAlignment};
-use crate::model::{Figurable, ParElem};
+use crate::model::Figurable;
 use crate::text::{
     FontFamily, FontList, Hyphenate, LinebreakElem, LocalName, TextElem, TextSize,
 };

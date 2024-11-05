@@ -15,8 +15,8 @@ use crate::introspection::{
     Count, Counter, CounterKey, CounterUpdate, Locatable, Location,
 };
 use crate::layout::{
-    AlignElem, Alignment, BlockBody, BlockElem, Em, HAlignment, Length, OuterVAlignment,
-    PlaceElem, PlacementScope, VAlignment, VElem,
+    Alignment, BlockBody, BlockElem, Em, HAlignment, Length, OuterVAlignment, PlaceElem,
+    PlacementScope, VAlignment, VElem,
 };
 use crate::model::{Numbering, NumberingPattern, Outlinable, Refable, Supplement};
 use crate::text::{Lang, Region, TextElem};

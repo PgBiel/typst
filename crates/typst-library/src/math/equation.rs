@@ -11,8 +11,7 @@ use crate::foundations::{
 };
 use crate::introspection::{Count, Counter, CounterUpdate, Locatable};
 use crate::layout::{
-    AlignElem, Alignment, BlockElem, InlineElem, OuterHAlignment, SpecificAlignment,
-    VAlignment,
+    Alignment, BlockElem, InlineElem, OuterHAlignment, SpecificAlignment, VAlignment,
 };
 use crate::math::{MathSize, MathVariant};
 use crate::model::{Numbering, Outlinable, ParLine, Refable, Supplement};

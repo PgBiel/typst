@@ -15,9 +15,7 @@ use crate::introspection::{Counter, CounterKey, Locatable};
 use crate::layout::{
     BoxElem, Dir, Em, Fr, HElem, HideElem, Length, Rel, RepeatElem, Spacing,
 };
-use crate::model::{
-    Destination, HeadingElem, NumberingPattern, ParElem, ParbreakElem, Refable,
-};
+use crate::model::{Destination, HeadingElem, NumberingPattern, ParbreakElem, Refable};
 use crate::text::{LinebreakElem, LocalName, SpaceElem, TextElem};
 
 /// A table of contents, figures, or other elements.
