@@ -225,13 +225,20 @@ impl Show for Packed<QuoteElem> {
 
 impl ShowSet for Packed<QuoteElem> {
     fn show_set(&self, styles: StyleChain) -> Styles {
-        let mut out = Styles::new();
         if self.block(styles) {
-            out.set(PadElem::set_left(Em::new(1.0).into()));
-            out.set(PadElem::set_right(Em::new(1.0).into()));
-            out.set(BlockElem::set_above(Smart::Custom(Em::new(2.4).into())));
-            out.set(BlockElem::set_below(Smart::Custom(Em::new(1.8).into())));
+            // out.set(PadElem::set_left(Em::new(1.0).into()));
+            // out.set(PadElem::set_right(Em::new(1.0).into()));
+            // out.set(BlockElem::set_above(Smart::Custom(Em::new(2.4).into())));
+            // out.set(BlockElem::set_below(Smart::Custom(Em::new(1.8).into())));
+            crate::style! {
+                set pad(left: Em::new(1.0).into(), right: Em::new(1.0).into())
+                set block(
+                    above: Smart::Custom(Em::new(2.4).into()),
+                    below: Smart::Custom(Em::new(1.8).into())
+                )
+            }
+        } else {
+            crate::style! {}
         }
-        out
     }
 }

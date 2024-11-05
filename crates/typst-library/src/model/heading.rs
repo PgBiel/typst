@@ -280,13 +280,17 @@ impl ShowSet for Packed<HeadingElem> {
         let above = Em::new(if level == 1 { 1.8 } else { 1.44 }) / scale;
         let below = Em::new(0.75) / scale;
 
-        let mut out = Styles::new();
-        out.set(TextElem::set_size(TextSize(size.into())));
-        out.set(TextElem::set_weight(FontWeight::BOLD));
-        out.set(BlockElem::set_above(Smart::Custom(above.into())));
-        out.set(BlockElem::set_below(Smart::Custom(below.into())));
-        out.set(BlockElem::set_sticky(true));
-        out
+        // let mut out = Styles::new();
+        // out.set(TextElem::set_size(TextSize(size.into())));
+        // out.set(TextElem::set_weight(FontWeight::BOLD));
+        // out.set(BlockElem::set_above(Smart::Custom(above.into())));
+        // out.set(BlockElem::set_below(Smart::Custom(below.into())));
+        // out.set(BlockElem::set_sticky(true));
+        // out
+        crate::style! {
+            set text(size: TextSize(size.into()), weight: FontWeight::BOLD)
+            set block(above: Smart::Custom(above.into()), below: Smart::Custom(below.into()), sticky: true)
+        }
     }
 }
 

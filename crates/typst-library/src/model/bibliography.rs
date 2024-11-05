@@ -273,10 +273,14 @@ impl Show for Packed<BibliographyElem> {
 impl ShowSet for Packed<BibliographyElem> {
     fn show_set(&self, _: StyleChain) -> Styles {
         const INDENT: Em = Em::new(1.0);
-        let mut out = Styles::new();
-        out.set(HeadingElem::set_numbering(None));
-        out.set(PadElem::set_left(INDENT.into()));
-        out
+        // let mut out = Styles::new();
+        // out.set(HeadingElem::set_numbering(None));
+        // out.set(PadElem::set_left(INDENT.into()));
+        // out
+        crate::style! {
+            set heading(numbering: None)
+            set pad(left: INDENT.into())
+        }
     }
 }
 

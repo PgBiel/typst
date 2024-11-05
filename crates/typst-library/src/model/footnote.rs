@@ -313,10 +313,14 @@ impl ShowSet for Packed<FootnoteEntry> {
     fn show_set(&self, _: StyleChain) -> Styles {
         let text_size = Em::new(0.85);
         let leading = Em::new(0.5);
-        let mut out = Styles::new();
-        out.set(ParElem::set_leading(leading.into()));
-        out.set(TextElem::set_size(TextSize(text_size.into())));
-        out
+        // let mut out = Styles::new();
+        // out.set(ParElem::set_leading(leading.into()));
+        // out.set(TextElem::set_size(TextSize(text_size.into())));
+        // out
+        crate::style! {
+            set par(leading: leading.into())
+            set text(size: TextSize(text_size.into()))
+        }
     }
 }
 

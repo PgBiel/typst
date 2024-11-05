@@ -334,11 +334,23 @@ pub trait ShowSet {
 
 #[macro_export]
 macro_rules! _element {
+    (align) => {
+        $crate::layout::AlignElem
+    };
+    (block) => {
+        $crate::layout::BlockElem
+    };
     (heading) => {
         $crate::model::HeadingElem
     };
+    (pad) => {
+        $crate::layout::PadElem
+    };
     (par) => {
         $crate::model::ParElem
+    };
+    (text) => {
+        $crate::text::TextElem
     };
     ($x:tt) => {
         $x
@@ -359,6 +371,7 @@ macro_rules! _kebab {
 macro_rules! style {
     ($(set $name:ident($($field:ident$(-$field_cont:ident)*: $value:expr),*))*) => {
         {
+            #[allow(unused_mut)]
             let mut style = $crate::foundations::Styles::new();
             paste::paste! {
                 $(
