@@ -15,7 +15,7 @@ use typst_library::diag::SourceResult;
 use typst_library::engine::{Engine, Route, Sink, Traced};
 use typst_library::foundations::{StyleChain, StyleVec};
 use typst_library::introspection::{Introspector, Locator, LocatorLink};
-use typst_library::layout::{Fragment, Size};
+use typst_library::layout::{Fragment, Frame, Point, Size};
 use typst_library::model::ParElem;
 use typst_library::routines::Routines;
 use typst_library::World;
@@ -42,6 +42,7 @@ pub fn layout_inline(
     styles: StyleChain,
     consecutive: bool,
     region: Size,
+    colliders: &[(Point, Frame)],
     expand: bool,
 ) -> SourceResult<Fragment> {
     layout_inline_impl(
@@ -54,10 +55,19 @@ pub fn layout_inline(
         engine.route.track(),
         locator.track(),
         styles,
-        consecutive,
-        region,
-        expand,
+        InlineLayoutArgs { consecutive, region, colliders, expand },
     )
+}
+
+/// Arguments to be passed to `layout_inline_impl`.
+///
+/// Needed to reduce the argument count due to trait implementation limits.
+#[derive(Hash)]
+struct InlineLayoutArgs<'a> {
+    consecutive: bool,
+    region: Size,
+    colliders: &'a [(Point, Frame)],
+    expand: bool,
 }
 
 /// The internal, memoized implementation of `layout_inline`.
@@ -73,10 +83,10 @@ fn layout_inline_impl(
     route: Tracked<Route>,
     locator: Tracked<Locator>,
     styles: StyleChain,
-    consecutive: bool,
-    region: Size,
-    expand: bool,
+    layout_args: InlineLayoutArgs<'_>,
 ) -> SourceResult<Fragment> {
+    let InlineLayoutArgs { consecutive, region, colliders, expand } = layout_args;
+
     let link = LocatorLink::new(locator);
     let locator = Locator::link(&link);
     let mut engine = Engine {
@@ -98,7 +108,8 @@ fn layout_inline_impl(
     let p = prepare(&mut engine, children, &text, segments, spans, styles)?;
 
     // Break the paragraph into lines.
-    let lines = linebreak(&engine, &p, region.x - p.hang);
+    let lines =
+        linebreak(&engine, &p, region.x - p.hang, colliders, ParElem::leading_in(styles));
 
     // Turn the selected lines into frames.
     finalize(&mut engine, &p, &lines, styles, region, expand, &mut locator)

@@ -13,6 +13,7 @@ use typst_library::layout::{Abs, Em};
 use typst_library::model::Linebreaks;
 use typst_library::text::{is_default_ignorable, Lang, TextElem};
 use typst_syntax::link_prefix;
+use typst_utils::SliceExt;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::*;
@@ -109,6 +110,8 @@ pub fn linebreak<'a>(
     engine: &Engine,
     p: &'a Preparation<'a>,
     width: Abs,
+    colliders: &[(Point, Frame)],
+    leading: Abs,
 ) -> Vec<Line<'a>> {
     let linebreaks = p.linebreaks.unwrap_or_else(|| {
         if p.justify {
@@ -119,7 +122,7 @@ pub fn linebreak<'a>(
     });
 
     match linebreaks {
-        Linebreaks::Simple => linebreak_simple(engine, p, width),
+        Linebreaks::Simple => linebreak_simple(engine, p, width, colliders, leading),
         Linebreaks::Optimized => linebreak_optimized(engine, p, width),
     }
 }
@@ -132,33 +135,80 @@ fn linebreak_simple<'a>(
     engine: &Engine,
     p: &'a Preparation<'a>,
     width: Abs,
+    colliders: &[(Point, Frame)],
+    leading: Abs,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::with_capacity(16);
     let mut start = 0;
     let mut last = None;
 
+    // Keep track of colliders sorted by their max Y.
+    // That way, we can ignore all colliders before the current line Y.
+    // Also sort them by X.
+    let mut sorted_colliders: Vec<&(Point, Frame)> = colliders.iter().collect();
+    sorted_colliders.sort_by_key(|(point, frame)| (point.y + frame.size().y, point.x));
+    // Total height from the top of the first line.
+    let mut height = Abs::zero();
+    let mut colliders = sorted_colliders.as_slice();
+
+    // Update colliders based on new height. Skips colliders which have already
+    // ended in the vertical axis, so they won't affect the width of new lines.
+    let skip_colliders = |height: Abs| {
+        colliders
+            .trim_start_matches(|(point, frame)| height.fits(point.y + frame.size().y))
+    };
+
+    // Calculates the available width for the current line.
+    let available_width = |height: Abs, line_height: Abs| {
+        let height_below = height + line_height;
+        if let Some((point, frame)) = colliders.first() {
+            if height_below.fits(point.y + frame.size().y) {
+                // Stop the line at this collider.
+                // TODO: Support colliders at the start
+                // => would reduce width but also move words forward
+                return Abs::zero().max(point.x.min(width));
+            }
+        }
+
+        width
+    };
+
+    colliders = skip_colliders(Abs::zero());
+
     breakpoints(p, |end, breakpoint| {
         // Compute the line and its size.
         let mut attempt = line(engine, p, start..end, breakpoint, lines.last());
 
+        // TODO: Proper line height
+        // Right now, just an estimate
+        let line_height = p.size;
+
         // If the line doesn't fit anymore, we push the last fitting attempt
         // into the stack and rebuild the line from the attempt's end. The
         // resulting line cannot be broken up further.
-        if !width.fits(attempt.width) {
+        if !available_width(height, p.size).fits(attempt.width) {
             if let Some((last_attempt, last_end)) = last.take() {
                 lines.push(last_attempt);
                 start = last_end;
                 attempt = line(engine, p, start..end, breakpoint, lines.last());
+
+                height += line_height + leading;
+                colliders = skip_colliders(height);
             }
         }
 
         // Finish the current line if there is a mandatory line break (i.e. due
         // to "\n") or if the line doesn't fit horizontally already since then
         // no shorter line will be possible.
-        if breakpoint == Breakpoint::Mandatory || !width.fits(attempt.width) {
+        if breakpoint == Breakpoint::Mandatory
+            || !available_width(height, line_height).fits(attempt.width)
+        {
             lines.push(attempt);
             start = end;
             last = None;
+
+            height += line_height + leading;
+            colliders = skip_colliders(height);
         } else {
             last = Some((attempt, end));
         }

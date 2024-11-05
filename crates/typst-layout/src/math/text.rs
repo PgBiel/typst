@@ -124,6 +124,7 @@ fn layout_complex_text(
         styles,
         false,
         Size::splat(Abs::inf()),
+        &[],
         false,
     )?
     .into_frame();

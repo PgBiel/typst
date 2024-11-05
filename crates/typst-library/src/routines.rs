@@ -16,8 +16,8 @@ use crate::foundations::{
 use crate::introspection::{Introspector, Locator, SplitLocator};
 use crate::layout::{
     Abs, BoxElem, ColumnsElem, Fragment, Frame, GridElem, InlineItem, MoveElem, PadElem,
-    PagedDocument, Region, Regions, Rel, RepeatElem, RotateElem, ScaleElem, Size,
-    SkewElem, StackElem,
+    PagedDocument, Point, Region, Regions, Rel, RepeatElem, RotateElem, ScaleElem,
+    Size, SkewElem, StackElem,
 };
 use crate::math::EquationElem;
 use crate::model::{DocumentInfo, EnumElem, ListElem, TableElem};
@@ -112,6 +112,7 @@ routines! {
         styles: StyleChain,
         consecutive: bool,
         region: Size,
+        colliders: &[(Point, Frame)],
         expand: bool,
     ) -> SourceResult<Fragment>
 
