@@ -98,7 +98,7 @@ fn layout_inline_impl(
     let p = prepare(&mut engine, children, &text, segments, spans, styles)?;
 
     // Break the paragraph into lines.
-    let lines = linebreak(&engine, &p, region.x - p.hang);
+    let lines = linebreak(&mut engine, &p, region.x - p.hang, region);
 
     // Turn the selected lines into frames.
     finalize(&mut engine, &p, &lines, styles, region, expand, &mut locator)

@@ -8,8 +8,10 @@ use icu_provider::AsDeserializingBufferProvider;
 use icu_provider_adapters::fork::ForkByKeyProvider;
 use icu_provider_blob::BlobDataProvider;
 use icu_segmenter::LineSegmenter;
+use line::predict_line_height_bounds;
 use typst_library::engine::Engine;
-use typst_library::layout::{Abs, Em};
+use typst_library::introspection::SplitLocator;
+use typst_library::layout::{Abs, Em, Region};
 use typst_library::model::Linebreaks;
 use typst_library::text::{is_default_ignorable, Lang, TextElem};
 use typst_syntax::link_prefix;
@@ -106,9 +108,10 @@ impl Breakpoint {
 
 /// Breaks the paragraph into lines.
 pub fn linebreak<'a>(
-    engine: &Engine,
+    engine: &mut Engine,
     p: &'a Preparation<'a>,
     width: Abs,
+    region: Size,
 ) -> Vec<Line<'a>> {
     let linebreaks = p.linebreaks.unwrap_or_else(|| {
         if p.justify {
@@ -119,7 +122,7 @@ pub fn linebreak<'a>(
     });
 
     match linebreaks {
-        Linebreaks::Simple => linebreak_simple(engine, p, width),
+        Linebreaks::Simple => linebreak_simple(engine, p, width, region),
         Linebreaks::Optimized => linebreak_optimized(engine, p, width),
     }
 }
@@ -129,13 +132,15 @@ pub fn linebreak<'a>(
 /// very unbalanced line, but is fast and simple.
 #[typst_macros::time]
 fn linebreak_simple<'a>(
-    engine: &Engine,
+    engine: &mut Engine,
     p: &'a Preparation<'a>,
     width: Abs,
+    region: Size,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::with_capacity(16);
     let mut start = 0;
-    let mut last = None;
+    let mut last: Option<(Line<'_>, usize)> = None;
+    let mut current_height = Abs::zero();
 
     breakpoints(p, |end, breakpoint| {
         // Compute the line and its size.
@@ -146,6 +151,11 @@ fn linebreak_simple<'a>(
         // resulting line cannot be broken up further.
         if !width.fits(attempt.width) {
             if let Some((last_attempt, last_end)) = last.take() {
+                let (top, bottom) =
+                    predict_line_height_bounds(engine, &last_attempt, width, region.y);
+
+                current_height += top + bottom;
+
                 lines.push(last_attempt);
                 start = last_end;
                 attempt = line(engine, p, start..end, breakpoint, lines.last());
@@ -156,6 +166,10 @@ fn linebreak_simple<'a>(
         // to "\n") or if the line doesn't fit horizontally already since then
         // no shorter line will be possible.
         if breakpoint == Breakpoint::Mandatory || !width.fits(attempt.width) {
+            let (top, bottom) =
+                predict_line_height_bounds(engine, &attempt, width, region.y);
+            current_height += top + bottom;
+
             lines.push(attempt);
             start = end;
             last = None;

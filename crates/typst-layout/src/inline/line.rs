@@ -409,6 +409,112 @@ fn should_repeat_hyphen(pred_line: &Line, text: &str) -> bool {
     }
 }
 
+/// Predict a line's top and bottom vertical positions. Both are relative to
+/// the line's very top (`y = 0`). The total line height will be given by
+/// `top + bottom`, where `top` is the first value returned and `bottom` is the
+/// second.
+///
+/// The `adjusted_width` argument is given by
+/// `region.x - p.hang - collider widths`.
+pub fn predict_line_height_bounds<'a>(
+    engine: &mut Engine,
+    line: &Line,
+    adjusted_width: Abs,
+    full: Abs,
+) -> (Abs, Abs) {
+    // First, we need to estimate the remaining width.
+    // This is only necessary for fractionals.
+    // Note that 'adjusted_width' already excludes 'p.hang' from the full width.
+    let mut remaining = adjusted_width - line.width;
+
+    // Handle hanging punctuation to the left.
+    if let Some(Item::Text(text)) = line.items.first() {
+        if let Some(glyph) = text.glyphs.first() {
+            if !text.dir.is_positive()
+                && TextElem::overhang_in(text.styles)
+                && (line.items.len() > 1 || text.glyphs.len() > 1)
+            {
+                let amount = overhang(glyph.c) * glyph.x_advance.at(text.size);
+                remaining += amount;
+            }
+        }
+    }
+
+    // Handle hanging punctuation to the right.
+    if let Some(Item::Text(text)) = line.items.last() {
+        if let Some(glyph) = text.glyphs.last() {
+            if text.dir.is_positive()
+                && TextElem::overhang_in(text.styles)
+                && (line.items.len() > 1 || text.glyphs.len() > 1)
+            {
+                let amount = overhang(glyph.c) * glyph.x_advance.at(text.size);
+                remaining += amount;
+            }
+        }
+    }
+
+    // Determine how much additional space is needed. The justification_ratio is
+    // for the first step justification, extra_justification is for the last
+    // step. For more info on multi-step justification, see Procedures for
+    // Inter- Character Space Expansion in W3C document Chinese Layout
+    // Requirements.
+    let fr = line.fr();
+    let shrinkability = line.shrinkability();
+
+    // We ignore the justify calculation (the usual 'else' branch from 'commit')
+    // as it only matters when fr is zero, and we only use 'remaining' for
+    // fractionals. When 'fr' is zero, the value of 'remaining' does not
+    // matter, as it is multiplied by zero.
+    if remaining < Abs::zero() && shrinkability > Abs::zero() {
+        // Attempt to reduce the length of the line, using shrinkability.
+        remaining = (remaining + shrinkability).min(Abs::zero());
+    }
+
+    let mut top = Abs::zero();
+    let mut bottom = Abs::zero();
+
+    for item in line.items.iter() {
+        match item {
+            Item::Frame(frame, styles) => {
+                let baseline = frame.baseline() + TextElem::baseline_in(*styles);
+                top.set_max(baseline);
+                bottom.set_max(frame.size().y - baseline);
+            }
+            Item::Text(shaped) => {
+                let (text_top, text_bottom) = shaped.measure(engine);
+
+                // Baseline is 'top'.
+                top.set_max(text_top);
+
+                // Frame size is 'top + bottom', so we have
+                // size - baseline = top + bottom - top = bottom.
+                bottom.set_max(text_bottom);
+            }
+            Item::Fractional(v, elem) => {
+                let amount = v.share(fr, remaining);
+                if let Some((elem, loc, styles)) = elem {
+                    let region = Size::new(amount, full);
+                    let Ok(frame) =
+                        layout_box(elem, engine, loc.relayout(), *styles, region)
+                    else {
+                        // TODO: Propagate error
+                        continue;
+                    };
+
+                    let baseline = frame.baseline() + TextElem::baseline_in(*styles);
+                    top.set_max(baseline);
+                    bottom.set_max(frame.size().y - baseline);
+                }
+            }
+            Item::Absolute(_, _) | Item::Tag(_) | Item::Skip(_) => {
+                // These do not affect the line height
+            }
+        }
+    }
+
+    (top, bottom)
+}
+
 /// Commit to a line and build its frame.
 #[allow(clippy::too_many_arguments)]
 pub fn commit(
