@@ -1,10 +1,59 @@
 use typst_library::foundations::{Resolve, Smart};
-use typst_library::layout::{Abs, AlignElem, Dir, Em, FixedAlignment};
+use typst_library::layout::{
+    Abs, AlignElem, Dir, Em, FixedAlignment, Frame, OuterHAlignment, Point,
+};
 use typst_library::model::Linebreaks;
 use typst_library::text::{Costs, Lang, TextElem};
 use unicode_bidi::{BidiInfo, Level as BidiLevel};
 
 use super::*;
+
+pub struct Colliders {
+    /// Total width used by left-aligned colliders.
+    pub left_width: Abs,
+    /// Total width used by right-aligned colliders.
+    pub right_width: Abs,
+    /// Left-aligned colliders.
+    pub left: Vec<(Point, Frame)>,
+    /// Right-aligned colliders.
+    pub right: Vec<(Point, Frame)>,
+}
+
+impl Colliders {
+    /// Collect collider information from the list of colliders and their
+    /// respective horizontal alignments and relative heights from the top of
+    /// the paragraph.
+    fn new(
+        colliders: impl IntoIterator<Item = (OuterHAlignment, Abs, Frame)>,
+        styles: StyleChain,
+    ) -> Self {
+        let mut left_width = Abs::zero();
+        let mut right_width = Abs::zero();
+
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+
+        for (align, dy, frame) in colliders {
+            match align.resolve(styles) {
+                FixedAlignment::Start => {
+                    // TODO: dx
+                    let point = Point::new(left_width, dy);
+                    left_width += frame.size().x;
+                    left.push((point, frame));
+                }
+                FixedAlignment::End => {
+                    // TODO: dx
+                    let point = Point::new(right_width, dy);
+                    right_width += frame.size().x;
+                    right.push((point, frame));
+                }
+                FixedAlignment::Center => unreachable!(),
+            }
+        }
+
+        Self { left_width, right_width, left, right }
+    }
+}
 
 /// A paragraph representation in which children are already layouted and text
 /// is already preshaped.
@@ -49,6 +98,8 @@ pub struct Preparation<'a> {
     pub size: Abs,
     /// The paragraph's leading.
     pub leading: Abs,
+    /// Colliders for this paragraph.
+    pub colliders: Colliders,
 }
 
 impl<'a> Preparation<'a> {
@@ -84,6 +135,7 @@ pub fn prepare<'a>(
     segments: Vec<Segment<'a>>,
     spans: SpanMapper,
     styles: StyleChain<'a>,
+    colliders: Vec<(OuterHAlignment, Abs, Frame)>,
 ) -> SourceResult<Preparation<'a>> {
     let dir = TextElem::dir_in(styles);
     let default_level = match dir {
@@ -96,6 +148,8 @@ pub fn prepare<'a>(
         .levels
         .iter()
         .any(|level| level.is_ltr() != default_level.is_ltr());
+
+    let colliders = Colliders::new(colliders, styles);
 
     let mut cursor = 0;
     let mut items = Vec::with_capacity(segments.len());
@@ -145,6 +199,7 @@ pub fn prepare<'a>(
         linebreaks: ParElem::linebreaks_in(styles),
         size: TextElem::size_in(styles),
         leading: ParElem::leading_in(styles),
+        colliders,
     })
 }
 

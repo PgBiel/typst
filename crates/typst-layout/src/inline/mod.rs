@@ -90,12 +90,14 @@ fn layout_inline_impl(
 
     let mut locator = locator.split();
 
+    let colliders = vec![];
+
     // Collect all text into one string for BiDi analysis.
     let (text, segments, spans) =
         collect(children, &mut engine, &mut locator, &styles, region, consecutive)?;
 
     // Perform BiDi analysis and then prepares paragraph layout.
-    let p = prepare(&mut engine, children, &text, segments, spans, styles)?;
+    let p = prepare(&mut engine, children, &text, segments, spans, styles, colliders)?;
 
     // Break the paragraph into lines.
     let lines = linebreak(&mut engine, &p, region.x - p.hang, region);
