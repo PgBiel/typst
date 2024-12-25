@@ -47,6 +47,8 @@ pub struct Preparation<'a> {
     pub linebreaks: Smart<Linebreaks>,
     /// The text size.
     pub size: Abs,
+    /// The paragraph's leading.
+    pub leading: Abs,
 }
 
 impl<'a> Preparation<'a> {
@@ -142,6 +144,7 @@ pub fn prepare<'a>(
         fallback: TextElem::fallback_in(styles),
         linebreaks: ParElem::linebreaks_in(styles),
         size: TextElem::size_in(styles),
+        leading: ParElem::leading_in(styles),
     })
 }
 

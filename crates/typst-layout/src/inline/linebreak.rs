@@ -10,8 +10,7 @@ use icu_provider_blob::BlobDataProvider;
 use icu_segmenter::LineSegmenter;
 use line::predict_line_height_bounds;
 use typst_library::engine::Engine;
-use typst_library::introspection::SplitLocator;
-use typst_library::layout::{Abs, Em, Region};
+use typst_library::layout::{Abs, Em};
 use typst_library::model::Linebreaks;
 use typst_library::text::{is_default_ignorable, Lang, TextElem};
 use typst_syntax::link_prefix;
@@ -154,7 +153,7 @@ fn linebreak_simple<'a>(
                 let (top, bottom) =
                     predict_line_height_bounds(engine, &last_attempt, width, region.y);
 
-                current_height += top + bottom;
+                current_height += top + bottom + p.leading;
 
                 lines.push(last_attempt);
                 start = last_end;
@@ -168,7 +167,7 @@ fn linebreak_simple<'a>(
         if breakpoint == Breakpoint::Mandatory || !width.fits(attempt.width) {
             let (top, bottom) =
                 predict_line_height_bounds(engine, &attempt, width, region.y);
-            current_height += top + bottom;
+            current_height += top + bottom + p.leading;
 
             lines.push(attempt);
             start = end;
