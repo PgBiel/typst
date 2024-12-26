@@ -328,7 +328,7 @@ fn linebreak_simple<'a>(
             );
 
         // Now we know how much width the line has available.
-        let available_width =
+        let mut available_width =
             width - attempt.collider_widths.left - attempt.collider_widths.right;
 
         // If the line doesn't fit anymore, we push the last fitting attempt
@@ -380,13 +380,16 @@ fn linebreak_simple<'a>(
                         active_colliders.iter().map(|ActiveCollider(c)| *c),
                         pending_colliders,
                     );
+
+                available_width =
+                    width - attempt.collider_widths.left - attempt.collider_widths.right;
             }
         }
 
         // Finish the current line if there is a mandatory line break (i.e. due
         // to "\n") or if the line doesn't fit horizontally already since then
         // no shorter line will be possible.
-        if breakpoint == Breakpoint::Mandatory || !width.fits(attempt.width) {
+        if breakpoint == Breakpoint::Mandatory || !available_width.fits(attempt.width) {
             lines.push(attempt);
             start = end;
             last = None;
