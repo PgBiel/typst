@@ -17,6 +17,29 @@ const EN_DASH: char = '–';
 const EM_DASH: char = '—';
 const LINE_SEPARATOR: char = '\u{2028}'; // We use LS to distinguish justified breaks.
 
+/// The sum of widths of colliders affecting a given line.
+#[derive(Debug, Clone)]
+pub struct ColliderWidths {
+    /// Sum of widths of left-aligned colliders.
+    pub left: Abs,
+    /// Sum of widths of right-aligned colliders.
+    pub right: Abs,
+}
+
+impl std::iter::Sum for ColliderWidths {
+    /// Sum all collider widths in an iterator by summing all left widths and
+    /// all right widths together.
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(
+            ColliderWidths { left: Abs::zero(), right: Abs::zero() },
+            |acc, current| ColliderWidths {
+                left: acc.left + current.left,
+                right: acc.right + current.right,
+            },
+        )
+    }
+}
+
 /// A layouted line, consisting of a sequence of layouted paragraph items that
 /// are mostly borrowed from the preparation phase. This type enables you to
 /// measure the size of a line in a range before committing to building the
@@ -36,6 +59,12 @@ pub struct Line<'a> {
     /// Whether the line ends with a hyphen or dash, either naturally or through
     /// hyphenation.
     pub dash: Option<Dash>,
+    /// Sum of widths of colliders affecting this line.
+    ///
+    /// This starts empty when creating the line and must be updated during
+    /// linebreaking, which is when it becomes clear which colliders may affect
+    /// each line.
+    pub collider_widths: ColliderWidths,
 }
 
 impl Line<'_> {
@@ -46,6 +75,7 @@ impl Line<'_> {
             width: Abs::zero(),
             justify: false,
             dash: None,
+            collider_widths: ColliderWidths { left: Abs::zero(), right: Abs::zero() },
         }
     }
 
@@ -173,7 +203,9 @@ pub fn line<'a>(
     // Compute the line's width.
     let width = items.iter().map(Item::natural_width).sum();
 
-    Line { items, width, justify, dash }
+    let collider_widths = ColliderWidths { left: Abs::zero(), right: Abs::zero() };
+
+    Line { items, width, justify, dash, collider_widths }
 }
 
 /// Collects / reshapes all items for the line with the given `range`.
@@ -526,8 +558,15 @@ pub fn commit(
     locator: &mut SplitLocator<'_>,
     styles: StyleChain,
 ) -> SourceResult<Frame> {
-    let mut remaining = width - line.width - p.hang;
-    let mut offset = Abs::zero();
+    let mut remaining = width
+        - line.width
+        - line.collider_widths.left
+        - line.collider_widths.right
+        - p.hang;
+
+    // Initial offset is given by the colliders to the left, which push line
+    // contents to the right.
+    let mut offset = line.collider_widths.left;
 
     // We always build the line from left to right. In an LTR paragraph, we must
     // thus add the hanging indent to the offset. When the paragraph is RTL, the

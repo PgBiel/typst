@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::ops::{Add, Sub};
 use std::sync::LazyLock;
 
@@ -8,9 +10,10 @@ use icu_provider::AsDeserializingBufferProvider;
 use icu_provider_adapters::fork::ForkByKeyProvider;
 use icu_provider_blob::BlobDataProvider;
 use icu_segmenter::LineSegmenter;
-use line::predict_line_height_bounds;
+use line::{predict_line_height_bounds, ColliderWidths};
+use prepare::Collider;
 use typst_library::engine::Engine;
-use typst_library::layout::{Abs, Em};
+use typst_library::layout::{Abs, Em, FixedAlignment};
 use typst_library::model::Linebreaks;
 use typst_library::text::{is_default_ignorable, Lang, TextElem};
 use typst_syntax::link_prefix;
@@ -126,6 +129,151 @@ pub fn linebreak<'a>(
     }
 }
 
+/// A newtype wrapper for active colliders (which are currently colliding with
+/// lines in the linebreak algorithms).
+///
+/// This wrapper is used to ensure those colliders are ordered by ascending
+/// bottom y, as the collider with the smallest bottom y ends - and is removed
+/// from the vector of active colliders - earlier. This allows using a heap
+/// to store active colliders, in which case one can remove newly inactive
+/// colliders by just popping from the heap until one collider hasn't ended,
+/// that is, its bottom height is still below the current line. In that case,
+/// due to the sorting, all colliders afterwards would also end below the
+/// current line, so they don't have to be checked.
+///
+/// Note that the 'Ord' implementation is reversed as the standard library's
+/// [`BinaryHeap`] type is a max heap, meaning it always pops the element with
+/// the largest key value, whereas we want this to happen for the smallest key
+/// value (ascending order).
+struct ActiveCollider<'a>(&'a Collider);
+impl<'a> PartialOrd for ActiveCollider<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<'a> Ord for ActiveCollider<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.bottom_dy().cmp(&other.0.bottom_dy()).reverse()
+    }
+}
+impl<'a> PartialEq for ActiveCollider<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.bottom_dy() == other.0.bottom_dy()
+    }
+}
+impl<'a> Eq for ActiveCollider<'a> {}
+
+/// We need to figure out how much width is available for this line
+/// before deciding whether to linebreak. Usually, this will be the
+/// 'width' parameter given to us. However, with colliders, this width
+/// will be reduced, so we need to figure out which colliders are active
+/// at this point first.
+///
+/// This includes:
+/// 1. Colliders which started before this line but haven't yet ended, or
+/// will end inside this line (between baseline and bottom).
+/// 2. Colliders which start inside this line which do not end before
+/// the line's baseline.
+///
+/// For the first one, we will filter colliders in 'active_colliders'
+/// for those which haven't already ended before the baseline ('top').
+/// For the second one, we will take colliders from 'pending_colliders'
+/// and include any which start after the very top of the line (even if
+/// before the baseline) but before the bottom, filtering for those
+/// which haven't ended before the baseline as well.
+///
+/// We will then sum the widths of those now active colliders and
+/// subtract from the line's available width to figure out the final
+/// width available to the line. That sum will be recorded in the line's data.
+///
+/// We return a partition of 'pending_colliders' which includes colliders
+/// starting inside the line in the first slice and those starting after the
+/// bottom of the line (that is, which didn't collide with any lines yet) in
+/// the second slice.
+fn determine_active_colliders_for_line<'c>(
+    line: &mut Line,
+    top_dy: Abs,
+    bottom_dy: Abs,
+    active_colliders: impl IntoIterator<Item = &'c Collider>,
+    pending_colliders: &'c [Collider],
+) -> (&'c [Collider], &'c [Collider]) {
+    let mut active_collider_widths: ColliderWidths =
+        ColliderWidths { left: Abs::zero(), right: Abs::zero() };
+
+    // We already know which colliders start before this line: those in
+    // 'active_colliders' (which we assume as an invariant which we must
+    // uphold when updating it later on).
+    //
+    // Now, figure out which pending colliders start within this line, even
+    // if before the baseline. As an invariant, we assume that any colliders
+    // in 'pending_colliders' start at a 'dy' that is greater than or equal
+    // to 'current_dy' (the very top of this line, before the baseline).
+    // We also assume the list of colliders start sorted by ascending 'dy',
+    // so, after 'first_pending_collider', it's always true that
+    // 'c.dy >= bottom_dy'.
+    let (no_longer_pending_colliders, still_pending_colliders) = {
+        let first_pending_collider =
+            pending_colliders.partition_point(|c| c.dy < bottom_dy);
+
+        pending_colliders.split_at(first_pending_collider)
+    };
+
+    // Now we may sum the widths of colliders starting before or inside this
+    // line which haven't ended before the baseline.
+    for still_active_collider in active_colliders
+        .into_iter()
+        .chain(no_longer_pending_colliders)
+        .filter(|collider| collider.bottom_dy() >= top_dy)
+    {
+        match still_active_collider.align {
+            FixedAlignment::Start => {
+                active_collider_widths.left += still_active_collider.size.x;
+            }
+            FixedAlignment::End => {
+                active_collider_widths.right += still_active_collider.size.x;
+            }
+            FixedAlignment::Center => unreachable!(),
+        }
+    }
+
+    // Save the collider widths which affect this line for posterior layout
+    // purposes.
+    line.collider_widths = active_collider_widths;
+
+    (no_longer_pending_colliders, still_pending_colliders)
+}
+
+/// Remove colliders which ended at the current line from the list of active
+/// colliders, and add colliders which started but didn't end at the current
+/// line.
+fn update_active_colliders<'c>(
+    bottom_dy: Abs,
+    active_colliders: &mut BinaryHeap<ActiveCollider<'c>>,
+    no_longer_pending_colliders: &'c [Collider],
+) {
+    while let Some(ActiveCollider(active_collider)) = active_colliders.peek() {
+        if active_collider.bottom_dy() >= bottom_dy {
+            // First active collider to end after the current line.
+            // Therefore, all upcoming ones will also end after the current
+            // line, and remain active (may collide with further lines).
+            break;
+        }
+
+        // Ends before the bottom of the current line, so it is no longer
+        // active.
+        _ = active_colliders.pop();
+    }
+
+    // Add all colliders which started before the line ended, which also end
+    // after the line ends. That is, they can still affect the next line(s).
+    active_colliders.extend(
+        no_longer_pending_colliders
+            .into_iter()
+            .filter(|c| c.bottom_dy() >= bottom_dy)
+            .map(ActiveCollider),
+    );
+}
+
 /// Performs line breaking in simple first-fit style. This means that we build
 /// lines greedily, always taking the longest possible line. This may lead to
 /// very unbalanced line, but is fast and simple.
@@ -138,26 +286,100 @@ fn linebreak_simple<'a>(
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::with_capacity(16);
     let mut start = 0;
-    let mut last: Option<(Line<'_>, usize)> = None;
-    let mut current_height = Abs::zero();
+    let mut last: Option<(Line<'_>, usize, Abs, &[Collider], &[Collider])> = None;
+
+    // Colliders which haven't collided with any lines in 'lines' yet.
+    let mut pending_colliders: &[Collider] = p.colliders.as_slice();
+    // Colliders which have collided with the latest line in 'lines', and might
+    // potentially collide with upcoming lines as well.
+    let mut active_colliders: BinaryHeap<ActiveCollider> = BinaryHeap::new();
+
+    // The current vertical displacement from the top of the paragraph when
+    // considering all lines currently in 'lines'. This will be the sum of
+    // their line heights plus leading spacing between them. This is used
+    // to figure out which colliders are active at any given point during the
+    // algorithm.
+    let mut current_dy = Abs::zero();
 
     breakpoints(p, |end, breakpoint| {
         // Compute the line and its size.
         let mut attempt = line(engine, p, start..end, breakpoint, lines.last());
 
+        // Compute the line's expected height. 'top' will be the baseline
+        // height from the line top (after the previous leading), while
+        // 'bottom' will contain the effective height of the line under 'top'.
+        let (mut top, mut bottom) =
+            predict_line_height_bounds(engine, &attempt, width, region.y);
+        let mut top_dy = top + current_dy;
+        let mut bottom_dy = top_dy + bottom;
+
+        // Compute collider widths for the line and record it as
+        // 'attempt.collider_widths'.
+        //
+        // Note that we need to perform a full search over 'active_colliders'
+        // as iterating over a binary heap has unspecified order.
+        let (mut no_longer_pending_colliders, mut still_pending_colliders) =
+            determine_active_colliders_for_line(
+                &mut attempt,
+                top_dy,
+                bottom_dy,
+                active_colliders.iter().map(|ActiveCollider(c)| *c),
+                pending_colliders,
+            );
+
+        // Now we know how much width the line has available.
+        let available_width =
+            width - attempt.collider_widths.left - attempt.collider_widths.right;
+
         // If the line doesn't fit anymore, we push the last fitting attempt
         // into the stack and rebuild the line from the attempt's end. The
         // resulting line cannot be broken up further.
-        if !width.fits(attempt.width) {
-            if let Some((last_attempt, last_end)) = last.take() {
-                let (top, bottom) =
-                    predict_line_height_bounds(engine, &last_attempt, width, region.y);
+        if !available_width.fits(attempt.width) {
+            if let Some((
+                last_attempt,
+                last_end,
+                last_bottom_dy,
+                last_no_longer_pending_colliders,
+                last_still_pending_colliders,
+            )) = last.take()
+            {
+                // Update the vertical position at which the next line will
+                // start.
+                current_dy = last_bottom_dy + p.leading;
 
-                current_height += top + bottom + p.leading;
+                // Update collider lists:
+                // Remove colliders which started at the new line from the list
+                // of pending colliders.
+                pending_colliders = last_still_pending_colliders;
+
+                // Remove active colliders which ended at the new line, and add
+                // pending colliders which started at this line, as long as they
+                // haven't already ended as well.
+                update_active_colliders(
+                    last_bottom_dy,
+                    &mut active_colliders,
+                    last_no_longer_pending_colliders,
+                );
 
                 lines.push(last_attempt);
                 start = last_end;
                 attempt = line(engine, p, start..end, breakpoint, lines.last());
+
+                // Update line height and collider information for the next
+                // check, in case we generate another subsequent line.
+                (top, bottom) =
+                    predict_line_height_bounds(engine, &attempt, width, region.y);
+                top_dy = current_dy + top;
+                bottom_dy = top_dy + bottom;
+
+                (no_longer_pending_colliders, still_pending_colliders) =
+                    determine_active_colliders_for_line(
+                        &mut attempt,
+                        top_dy,
+                        bottom_dy,
+                        active_colliders.iter().map(|ActiveCollider(c)| *c),
+                        pending_colliders,
+                    );
             }
         }
 
@@ -165,19 +387,29 @@ fn linebreak_simple<'a>(
         // to "\n") or if the line doesn't fit horizontally already since then
         // no shorter line will be possible.
         if breakpoint == Breakpoint::Mandatory || !width.fits(attempt.width) {
-            let (top, bottom) =
-                predict_line_height_bounds(engine, &attempt, width, region.y);
-            current_height += top + bottom + p.leading;
-
             lines.push(attempt);
             start = end;
             last = None;
+            current_dy = bottom_dy + p.leading;
+
+            pending_colliders = still_pending_colliders;
+            update_active_colliders(
+                bottom_dy,
+                &mut active_colliders,
+                no_longer_pending_colliders,
+            );
         } else {
-            last = Some((attempt, end));
+            last = Some((
+                attempt,
+                end,
+                bottom_dy,
+                no_longer_pending_colliders,
+                still_pending_colliders,
+            ));
         }
     });
 
-    if let Some((line, _)) = last {
+    if let Some((line, _, _, _, _)) = last {
         lines.push(line);
     }
 

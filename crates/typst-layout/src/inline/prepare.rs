@@ -1,58 +1,71 @@
 use typst_library::foundations::{Resolve, Smart};
-use typst_library::layout::{
-    Abs, AlignElem, Dir, Em, FixedAlignment, Frame, OuterHAlignment, Point,
-};
+use typst_library::layout::{Abs, AlignElem, Dir, Em, FixedAlignment, OuterHAlignment};
 use typst_library::model::Linebreaks;
 use typst_library::text::{Costs, Lang, TextElem};
 use unicode_bidi::{BidiInfo, Level as BidiLevel};
 
 use super::*;
 
-pub struct Colliders {
-    /// Total width used by left-aligned colliders.
-    pub left_width: Abs,
-    /// Total width used by right-aligned colliders.
-    pub right_width: Abs,
-    /// Left-aligned colliders.
-    pub left: Vec<(Point, Frame)>,
-    /// Right-aligned colliders.
-    pub right: Vec<(Point, Frame)>,
+#[derive(Debug)]
+pub struct Collider {
+    /// The collider's horizontal alignment (must be left or right for now).
+    pub align: FixedAlignment,
+    /// The horizontal displacement of the collider relative to its alignment.
+    #[allow(unused)]
+    pub dx: Abs,
+    /// The vertical displacement of the top of the collider from the top of
+    /// the paragraph.
+    pub dy: Abs,
+    /// The collider's rectangular size.
+    pub size: Size,
 }
 
-impl Colliders {
-    /// Collect collider information from the list of colliders and their
-    /// respective horizontal alignments and relative heights from the top of
-    /// the paragraph.
-    fn new(
-        colliders: impl IntoIterator<Item = (OuterHAlignment, Abs, Frame)>,
-        styles: StyleChain,
-    ) -> Self {
-        let mut left_width = Abs::zero();
-        let mut right_width = Abs::zero();
+impl Collider {
+    /// The vertical displacement of the bottom of this collider from the top
+    /// of the paragraph.
+    pub fn bottom_dy(&self) -> Abs {
+        self.dy + self.size.y
+    }
+}
 
-        let mut left = Vec::new();
-        let mut right = Vec::new();
+/// Collect collider information from the list of colliders and their
+/// respective horizontal alignments and relative heights from the top of
+/// the paragraph.
+///
+/// Colliders are sorted by ascending 'dy'.
+fn collect_colliders(
+    colliders: Vec<(OuterHAlignment, Abs, Size)>,
+    styles: StyleChain,
+) -> Vec<Collider> {
+    let mut left_width = Abs::zero();
+    let mut right_width = Abs::zero();
 
-        for (align, dy, frame) in colliders {
-            match align.resolve(styles) {
+    let mut colliders: Vec<Collider> = colliders
+        .into_iter()
+        .map(|(align, dy, size)| {
+            let align = align.resolve(styles);
+            match align {
                 FixedAlignment::Start => {
                     // TODO: dx
-                    let point = Point::new(left_width, dy);
-                    left_width += frame.size().x;
-                    left.push((point, frame));
+                    // For now, place one after the other by accumulating width
+                    let collider = Collider { align, dx: left_width, dy, size };
+                    left_width += size.x;
+                    collider
                 }
                 FixedAlignment::End => {
                     // TODO: dx
-                    let point = Point::new(right_width, dy);
-                    right_width += frame.size().x;
-                    right.push((point, frame));
+                    // For now, place one after the other by accumulating width
+                    let collider = Collider { align, dx: -right_width, dy, size };
+                    right_width += size.x;
+                    collider
                 }
                 FixedAlignment::Center => unreachable!(),
             }
-        }
+        })
+        .collect();
 
-        Self { left_width, right_width, left, right }
-    }
+    colliders.sort_unstable_by_key(|c| c.dy);
+    colliders
 }
 
 /// A paragraph representation in which children are already layouted and text
@@ -98,8 +111,8 @@ pub struct Preparation<'a> {
     pub size: Abs,
     /// The paragraph's leading.
     pub leading: Abs,
-    /// Colliders for this paragraph.
-    pub colliders: Colliders,
+    /// Potential colliders for this paragraph.
+    pub colliders: Vec<Collider>,
 }
 
 impl<'a> Preparation<'a> {
@@ -135,7 +148,7 @@ pub fn prepare<'a>(
     segments: Vec<Segment<'a>>,
     spans: SpanMapper,
     styles: StyleChain<'a>,
-    colliders: Vec<(OuterHAlignment, Abs, Frame)>,
+    colliders: Vec<(OuterHAlignment, Abs, Size)>,
 ) -> SourceResult<Preparation<'a>> {
     let dir = TextElem::dir_in(styles);
     let default_level = match dir {
@@ -149,7 +162,7 @@ pub fn prepare<'a>(
         .iter()
         .any(|level| level.is_ltr() != default_level.is_ltr());
 
-    let colliders = Colliders::new(colliders, styles);
+    let colliders = collect_colliders(colliders, styles);
 
     let mut cursor = 0;
     let mut items = Vec::with_capacity(segments.len());
