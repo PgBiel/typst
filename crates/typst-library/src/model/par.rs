@@ -126,6 +126,10 @@ pub struct ParElem {
     #[resolve]
     pub hanging_indent: Length,
 
+    /// The paragraph's colliders.
+    #[ghost]
+    pub colliders: Vec<Packed<ColliderData>>,
+
     /// The contents of the paragraph.
     #[external]
     #[required]
@@ -141,6 +145,9 @@ pub struct ParElem {
 impl ParElem {
     #[elem]
     type ParLine;
+
+    #[elem]
+    type ColliderData;
 }
 
 impl Construct for ParElem {
@@ -419,4 +426,20 @@ impl Count for Packed<ParLineMarker> {
         // The line counter must be updated manually by the root flow.
         None
     }
+}
+
+/// Collider data for testing. This should be removed or adapted in the future!
+#[elem(name = "collider")]
+pub struct ColliderData {
+    #[required]
+    pub align: OuterHAlignment,
+    #[required]
+    pub dy: crate::layout::Length,
+    #[required]
+    pub body: Content,
+}
+
+crate::foundations::cast! {
+    ColliderData,
+    v: Content => v.unpack::<Self>().map_err(|_| ecow::eco_format!("This is not a collider."))?,
 }

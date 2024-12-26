@@ -13,9 +13,9 @@ pub use self::box_::layout_box;
 use comemo::{Track, Tracked, TrackedMut};
 use typst_library::diag::SourceResult;
 use typst_library::engine::{Engine, Route, Sink, Traced};
-use typst_library::foundations::{StyleChain, StyleVec};
+use typst_library::foundations::{Resolve, StyleChain, StyleVec};
 use typst_library::introspection::{Introspector, Locator, LocatorLink};
-use typst_library::layout::{Fragment, Size};
+use typst_library::layout::{Abs, Axes, Fragment, Region, Size};
 use typst_library::model::ParElem;
 use typst_library::routines::Routines;
 use typst_library::World;
@@ -88,9 +88,24 @@ fn layout_inline_impl(
         route: Route::extend(route),
     };
 
-    let mut locator = locator.split();
+    // TODO: Receive this information within the flow
+    let colliders = ParElem::colliders_in(styles)
+        .into_iter()
+        .map(|c| {
+            let frame = crate::layout_fragment(
+                &mut engine,
+                c.body(),
+                locator.relayout(),
+                styles,
+                Region::new(Axes::splat(Abs::inf()), Axes::splat(false)).into(),
+            )?
+            .into_frame();
 
-    let colliders = vec![];
+            Ok((c.align, c.dy.resolve(styles), frame.size()))
+        })
+        .collect::<SourceResult<Vec<_>>>()?;
+
+    let mut locator = locator.split();
 
     // Collect all text into one string for BiDi analysis.
     let (text, segments, spans) =
