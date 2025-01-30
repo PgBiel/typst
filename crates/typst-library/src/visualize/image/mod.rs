@@ -20,8 +20,8 @@ use typst_utils::LazyHash;
 use crate::diag::{bail, At, SourceResult, StrResult};
 use crate::engine::Engine;
 use crate::foundations::{
-    cast, elem, func, scope, AutoValue, Bytes, Cast, Content, Derived, Dict, NativeElement,
-    Packed, Show, Smart, StyleChain, Value,
+    cast, elem, func, scope, AutoValue, Bytes, Cast, Content, Derived, Dict,
+    NativeElement, Packed, Show, Smart, StyleChain, Value,
 };
 use crate::layout::{BlockElem, Length, Rel, Sizing};
 use crate::loading::{DataSource, Load, Readable};
@@ -147,8 +147,6 @@ impl ImageElem {
         #[named]
         scaling: Option<ImageScaling>,
     ) -> StrResult<Content> {
-        let bytes = data.into_bytes();
-        let source = Derived::new(DataSource::Bytes(bytes.clone()), bytes);
         let mut elem = ImageElem::new(source);
         if let Some(format) = format {
             elem.push_format(format);
@@ -246,16 +244,16 @@ impl Image {
     ) -> StrResult<Image> {
         let kind = match format {
             ImageFormat::Raster(format) => {
-                let ImageSource::Readable(readable) = source else {
+                let ImageSource::Derived(data) = source else {
                     bail!("expected readable source for the given format (str or bytes)");
                 };
-                ImageKind::Raster(RasterImage::new(readable.into(), format)?)
+                ImageKind::Raster(RasterImage::new(data.derived, format)?)
             }
             ImageFormat::Vector(VectorFormat::Svg) => {
-                let ImageSource::Readable(readable) = source else {
+                let ImageSource::Derived(data) = source else {
                     bail!("expected readable source for the given format (str or bytes)");
                 };
-                ImageKind::Svg(SvgImage::new(readable.into(), options)?)
+                ImageKind::Svg(SvgImage::new(data.derived, options)?)
             }
             ImageFormat::Pixmap(format) => {
                 let ImageSource::Pixmap(source) = source else {
@@ -339,19 +337,19 @@ impl Debug for Image {
 /// Information required to decode an image.
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub enum ImageSource {
-    Readable(Readable),
+    Derived(Derived<DataSource, Bytes>),
     Pixmap(Arc<PixmapSource>),
 }
 
 impl From<Bytes> for ImageSource {
     fn from(bytes: Bytes) -> Self {
-        ImageSource::Readable(Readable::Bytes(bytes))
+        ImageSource::Derived(Derived::new(DataSource::Bytes(bytes.clone()), bytes))
     }
 }
 
 cast! {
     ImageSource,
-    data: Readable => ImageSource::Readable(data),
+    data: Bytes => ImageSource::from(data),
     mut dict: Dict => {
         let source = ImageSource::Pixmap(Arc::new(PixmapSource {
             data: dict.take("data")?.cast()?,
