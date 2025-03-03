@@ -701,8 +701,8 @@ pub struct CellGrid<'a> {
     pub hlines: Vec<Vec<Line>>,
     /// The repeatable headers of this grid.
     pub headers: Vec<Repeatable<Header>>,
-    /// The repeatable footer of this grid.
-    pub footer: Option<Repeatable<Footer>>,
+    /// The repeatable footers of this grid.
+    pub footers: Vec<Repeatable<Footer>>,
     /// Whether this grid has gutters.
     pub has_gutter: bool,
 }
@@ -779,7 +779,7 @@ impl<'a> CellGrid<'a> {
             vlines,
             hlines,
             headers,
-            footer,
+            footers: footer.into_iter().collect(),
             has_gutter,
         }
     }
@@ -917,6 +917,11 @@ impl<'a> CellGrid<'a> {
     #[inline]
     pub fn has_repeated_headers(&self) -> bool {
         self.headers.iter().any(|h| matches!(h, Repeatable::Repeated(_)))
+    }
+
+    #[inline]
+    pub fn has_repeated_footers(&self) -> bool {
+        self.footers.iter().any(|f| matches!(f, Repeatable::Repeated(_)))
     }
 }
 
