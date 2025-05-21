@@ -1744,11 +1744,6 @@ impl<'a> GridLayouter<'a> {
         );
 
         if !last {
-            self.current.repeated_header_rows = 0;
-            self.current.last_repeated_header_end = 0;
-            self.current.repeating_header_height = Abs::zero();
-            self.current.repeating_header_heights.clear();
-
             let disambiguator = self.finished.len();
             if let Some(Repeatable::Repeated(footer)) = &self.grid.footer {
                 self.prepare_footer(footer, engine, disambiguator)?;
@@ -1789,6 +1784,11 @@ impl<'a> GridLayouter<'a> {
         self.current.initial_after_repeats = self.current.initial.y;
 
         self.current.could_progress_at_top = self.regions.may_progress();
+
+        self.current.repeated_header_rows = 0;
+        self.current.last_repeated_header_end = 0;
+        self.current.repeating_header_height = Abs::zero();
+        self.current.repeating_header_heights.clear();
 
         if !self.grid.headers.is_empty() {
             self.finished_header_rows.push(header_row_info);
