@@ -718,7 +718,7 @@ impl<'a> GridLayouter<'a> {
                 // this row, and convert them to points and shapes.
                 let segments = generate_line_segments(
                     self.grid,
-                    tracks,
+                    tracks.clone(),
                     y,
                     hlines_at_row,
                     |grid, y, x, stroke| {
@@ -752,6 +752,45 @@ impl<'a> GridLayouter<'a> {
 
                 // Draw later (after we sort all lines below.)
                 lines.extend(segments);
+
+                if let Some(prev_y) = prev_y
+                    && prev_y + 1 == y
+                    && let Some(prev_row) = rows.iter().find(|row| prev_y == row.y)
+                {
+                    let mid_lines = get_hlines_at(y)
+                        .iter()
+                        .filter(|l| l.position == LinePosition::Mid);
+
+                    let mid_segments = generate_line_segments(
+                        self.grid,
+                        tracks,
+                        y,
+                        mid_lines,
+                        |_, _, _, stroke| {
+                            stroke.flatten().map(|s| {
+                                (s, crate::grid::lines::StrokePriority::ExplicitLine)
+                            })
+                        },
+                    )
+                    .map(|segment| {
+                        let LineSegment { stroke, offset: dx, length, priority } =
+                            segment;
+                        let stroke = (*stroke).clone().unwrap_or_default();
+                        let thickness = stroke.thickness;
+                        let half = thickness / 2.0;
+                        let dx = if self.is_rtl { self.width - dx - length } else { dx };
+                        let target = Point::with_x(length + thickness);
+                        let hline = Geometry::Line(target).stroked(stroke);
+                        (
+                            thickness,
+                            priority,
+                            Point::new(dx - half, dy - prev_row.height / 2.0),
+                            FrameItem::Shape(hline, self.span),
+                        )
+                    });
+
+                    lines.extend(mid_segments);
+                }
 
                 prev_y = Some(y);
             }

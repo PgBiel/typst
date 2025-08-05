@@ -12,7 +12,7 @@ use typst_library::foundations::{Content, Fold, Packed, Smart, StyleChain};
 use typst_library::introspection::Locator;
 use typst_library::layout::{
     Abs, Alignment, Axes, Celled, GridCell, GridChild, GridElem, GridItem, Length,
-    OuterHAlignment, OuterVAlignment, Rel, ResolvedCelled, Sides, Sizing,
+    OuterHAlignment, OuterVAlignment, Rel, ResolvedCelled, Sides, Sizing, VAlignment,
 };
 use typst_library::model::{TableCell, TableChild, TableElem, TableItem};
 use typst_library::text::TextElem;
@@ -143,8 +143,9 @@ fn grid_item_to_resolvable(
             stroke: hline.stroke.resolve(styles),
             span: hline.span(),
             position: match hline.position.get(styles) {
-                OuterVAlignment::Top => LinePosition::Before,
-                OuterVAlignment::Bottom => LinePosition::After,
+                VAlignment::Top => LinePosition::Before,
+                VAlignment::Horizon => LinePosition::Mid,
+                VAlignment::Bottom => LinePosition::After,
             },
         },
         GridItem::VLine(vline) => ResolvableGridItem::VLine {
@@ -626,6 +627,8 @@ pub enum LinePosition {
     Before,
     /// The line should be drawn after its track (e.g. hline below a row).
     After,
+    /// Middle
+    Mid,
 }
 
 /// A grid entry.

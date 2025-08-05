@@ -13,9 +13,7 @@ use crate::foundations::{
     Array, CastInfo, Content, Context, Fold, FromValue, Func, IntoValue, Packed, Reflect,
     Resolve, Smart, StyleChain, Value, cast, elem, scope,
 };
-use crate::layout::{
-    Alignment, Length, OuterHAlignment, OuterVAlignment, Rel, Sides, Sizing,
-};
+use crate::layout::{Alignment, Length, OuterHAlignment, Rel, Sides, Sizing, VAlignment};
 use crate::model::{TableCell, TableFooter, TableHLine, TableHeader, TableVLine};
 use crate::visualize::{Paint, Stroke};
 
@@ -533,8 +531,8 @@ pub struct GridHLine {
     /// shouldn't be used otherwise - prefer just increasing the `y` field by
     /// one instead), since then the position below a row becomes different
     /// from the position above the next row due to the spacing between both.
-    #[default(OuterVAlignment::Top)]
-    pub position: OuterVAlignment,
+    #[default(VAlignment::Top)]
+    pub position: VAlignment,
 }
 
 /// A vertical line in the grid.
